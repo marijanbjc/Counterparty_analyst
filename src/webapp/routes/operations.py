@@ -4,7 +4,7 @@ from src.core import factpack
 from src.core import inn as inn_module
 from src.db.client import repository as client_repository
 from src.webapp.dependencies import CurrentUser, DbSession
-from src.webapp.schemas import CompareRequest, ProfileResponse
+from src.webapp.schemas import CompareRequest, CompareResponse, ProfileResponse
 
 router = APIRouter(prefix="/api", tags=["operations"])
 
@@ -22,24 +22,23 @@ def profile(session: DbSession, user: CurrentUser) -> ProfileResponse:
     )
 
 
-@router.post("/compare")
-def compare(payload: CompareRequest, session: DbSession, user: CurrentUser) -> dict:
+@router.post("/compare", response_model=CompareResponse)
+def compare(payload: CompareRequest, session: DbSession, user: CurrentUser) -> CompareResponse:
     unique_inns = list(dict.fromkeys(payload.inns))
-    invalid = [inn for inn in unique_inns if not inn_module.is_valid(inn)]
-    if invalid:
+    invalid = {inn for inn in unique_inns if not inn_module.is_valid(inn)}
+    valid = [inn for inn in unique_inns if inn not in invalid]
+    if not valid:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail={"message": inn_module.FORMAT_HINT, "invalid": invalid},
+            detail={"message": inn_module.FORMAT_HINT, "invalid": sorted(invalid)},
         )
 
-    packs = factpack.build_many(session, unique_inns, role=payload.role_preset)
+    packs = factpack.build_many(session, valid, role=payload.role_preset)
     found = {pack["inn"] for pack in packs}
-    missing = [inn for inn in unique_inns if inn not in found]
-    if missing:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            detail={"message": "Часть контрагентов отсутствует в базе.", "missing": missing},
-        )
-
     client_repository.record_request(session, user.id)
-    return {"items": packs, "count": len(packs)}
+    return CompareResponse(
+        items=packs,
+        count=len(packs),
+        missing=[inn for inn in valid if inn not in found],
+        invalid=[inn for inn in unique_inns if inn in invalid],
+    )

@@ -27,8 +27,11 @@ def _owned_last_analysis(
 
 
 def _payload(item: Analysis) -> dict:
+    report = item.report or {}
     return {
         "inn": item.inn,
+        "short_name": report.get("short_name"),
+        "as_of": report.get("as_of"),
         "analysis_type": item.analysis_type,
         "verdict": item.verdict,
         "summary": item.summary,
@@ -97,10 +100,11 @@ def export_session_report(
     else:
         body = report_builder.to_markdown(payload)
         media_type, extension = "text/markdown", "md"
+    name = "-".join(filter(None, ["report", item.inn, payload["as_of"]]))
     return Response(
         body,
         media_type=f"{media_type}; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="report-{item.inn}.{extension}"'},
+        headers={"Content-Disposition": f'attachment; filename="{name}.{extension}"'},
     )
 
 

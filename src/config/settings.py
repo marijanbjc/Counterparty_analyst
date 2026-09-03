@@ -11,6 +11,7 @@ from pydantic_settings import (
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_FILE = ROOT / "config" / "internal_config.yaml"
+DEFAULT_TOKEN_SECRET = "dev-insecure-secret-change-in-env"
 
 
 class YamlSource(PydanticBaseSettingsSource):
@@ -78,6 +79,10 @@ class Settings(BaseSettings):
             YamlSource(settings_cls),
             file_secret_settings,
         )
+
+    @property
+    def token_secret_is_default(self) -> bool:
+        return self.auth_token_secret == DEFAULT_TOKEN_SECRET
 
     @property
     def database_url(self) -> str:

@@ -42,19 +42,21 @@ def chat(payload: ChatRequest, session: DbSession, user: CurrentUser) -> ChatRes
 
     result = report_builder.build(pack)
     answer = f"{result['summary']}\n\n{result['analysis']}"
-    history_repository.add_message(
+    question = history_repository.add_message(
         session,
         session_id=chat_session.id,
         role="user",
         content=payload.message,
     )
-    history_repository.add_message(
+    # факт-пакет в историю не кладём: он живёт в analyses, а окно контекста его вырезает
+    reply = history_repository.add_message(
         session,
         session_id=chat_session.id,
         role="assistant",
         content=answer,
-        meta={"inn": pack["inn"], "degraded": True, "report": result["report"]},
+        meta={"inn": pack["inn"], "degraded": True},
     )
+    client_repository.set_session_title(session, chat_session, pack["short_name"])
     analyses_repository.save(
         session,
         session_id=chat_session.id,
@@ -70,5 +72,7 @@ def chat(payload: ChatRequest, session: DbSession, user: CurrentUser) -> ChatRes
     return ChatResponse(
         answer=answer,
         contractor={"inn": pack["inn"], "short_name": pack["short_name"]},
+        session=chat_session,
+        messages=[question, reply],
         **result,
     )

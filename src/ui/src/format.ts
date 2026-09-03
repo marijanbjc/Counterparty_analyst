@@ -33,3 +33,9 @@ export const riskTone = (value: RiskLevel) =>
   ({ LOW: 'good', MEDIUM: 'warning', HIGH: 'danger', UNKNOWN: 'neutral' })[
     value ?? 'UNKNOWN'
   ]
+
+export function entityKind(kind: string | null | undefined): string {
+  if (kind === 'sole_proprietor') return 'Индивидуальный предприниматель'
+  if (kind === 'organization') return 'Организация'
+  return 'Тип не определён'
+}

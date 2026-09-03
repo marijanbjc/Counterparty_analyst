@@ -24,6 +24,7 @@ function App() {
   const [activeSession, setActiveSession] = useState<Session | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [currentPack, setCurrentPack] = useState<FactPack | null>(null)
+  const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loginError, setLoginError] = useState<string | null>(null)
 
@@ -33,13 +34,21 @@ function App() {
     try {
       const history = await api.messages(token, session.id)
       setActiveSession(session)
-      setMessages(history)
-      const lastReport = [...history].reverse().find((item) => item.meta?.report)?.meta?.report
-      setCurrentPack(lastReport || null)
+      setMessages(history.items)
+      setHasMore(history.has_more)
+      const report = await api.sessionReport(token, session.id).catch(() => null)
+      setCurrentPack(report?.report ?? null)
     } finally {
       setLoading(false)
     }
   }, [auth?.token])
+
+  const loadEarlier = useCallback(async () => {
+    if (!auth || !activeSession || messages.length === 0) return
+    const page = await api.messages(auth.token, activeSession.id, 50, messages[0].id)
+    setMessages((items) => [...page.items, ...items])
+    setHasMore(page.has_more)
+  }, [auth, activeSession, messages])
 
   const bootstrap = useCallback(async (state: AuthState) => {
     setLoading(true)
@@ -101,14 +110,30 @@ function App() {
     await selectSession(created)
   }
 
+  const removeSession = async (target: Session) => {
+    if (!auth) return
+    await api.deleteSession(auth.token, target.id)
+    const rest = sessions.filter((item) => item.id !== target.id)
+    setSessions(rest)
+    if (activeSession?.id !== target.id) return
+    if (rest.length > 0) {
+      await selectSession(rest[0])
+      return
+    }
+    const created = await api.createSession(auth.token)
+    setSessions([created])
+    await selectSession(created)
+  }
+
   const updateSession = (updated: Session) => {
     setSessions((items) => items.map((item) => item.id === updated.id ? updated : item))
     setActiveSession(updated)
   }
 
-  const addMessage = (message: Message, pack: FactPack) => {
-    setMessages((items) => [...items, message])
+  const applyChat = (saved: Message[], pack: FactPack, session: Session) => {
+    setMessages((items) => [...items, ...saved])
     setCurrentPack(pack)
+    updateSession(session)
   }
 
   if (!auth) {
@@ -127,8 +152,11 @@ function App() {
       onLogout={logout}
       onCreateSession={createSession}
       onSelectSession={selectSession}
+      onDeleteSession={removeSession}
       onSessionUpdated={updateSession}
-      onMessageAdded={addMessage}
+      onChatCompleted={applyChat}
+      hasMore={hasMore}
+      onLoadEarlier={loadEarlier}
     />
   )
 }

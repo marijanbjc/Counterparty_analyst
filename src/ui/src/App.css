@@ -209,13 +209,13 @@ h3,
 
 /* Оболочка Альфа-Бизнес */
 .business-app {
-  min-height: 100vh;
+  height: 100vh;
 }
 
 .business-shell {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100%;
   background: var(--ab-bg);
 }
 
@@ -307,6 +307,7 @@ h3,
 .business-main {
   position: relative;
   min-width: 0;
+  overflow-y: auto;
 }
 
 .business-mobile-header {
@@ -406,9 +407,15 @@ h3,
 
 /* Страница Контрагенты */
 .contractors-page {
+  display: flex;
+  flex-direction: column;
   width: min(100%, 1480px);
+  /* height даёт flex-растягивание панели, min-height — рост страницы,
+     когда экран низкий и нижний отступ должен уехать под панель */
+  height: 100%;
+  min-height: fit-content;
   margin: 0 auto;
-  padding: 34px 32px 64px;
+  padding: 22px 32px 72px;
 }
 
 .contractors-page > h1 {
@@ -429,8 +436,8 @@ h3,
   flex-direction: column !important;
   align-items: flex-start !important;
   justify-content: flex-start !important;
-  min-height: 158px !important;
-  padding: 18px !important;
+  min-height: 96px !important;
+  padding: 12px 14px !important;
   overflow: hidden;
   border: 1px solid var(--ab-line) !important;
   border-radius: 10px !important;
@@ -451,7 +458,6 @@ h3,
 
 .service-card-ai {
   border: 2px solid var(--ab-red) !important;
-  cursor: pointer;
 }
 
 .service-card-ai::after {
@@ -466,10 +472,6 @@ h3,
   font-size: 8px;
   font-weight: 800;
   letter-spacing: 0.05em;
-}
-
-.service-card-ai:hover {
-  background: #fff7f6 !important;
 }
 
 .service-icon {
@@ -504,147 +506,6 @@ h3,
   font-size: 12px;
   line-height: 1.35;
 }
-
-.ai-card-action {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-  margin-top: auto;
-  padding-top: 12px;
-  color: var(--ab-red);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.contractor-search-card {
-  margin-top: 18px;
-  padding: 23px 24px 20px;
-  border: 1px solid var(--ab-line);
-  border-radius: 9px;
-  background: white;
-  box-shadow: 0 3px 8px rgba(37, 47, 56, 0.05);
-}
-
-.contractor-search-card h2,
-.reports-section h2 {
-  margin: 0 0 18px;
-  font-size: 21px;
-  letter-spacing: -0.025em;
-}
-
-.search-filters {
-  display: flex;
-  gap: 7px;
-  margin-top: 13px;
-}
-
-.search-filters span {
-  padding: 5px 12px;
-  border-radius: 5px;
-  color: #596572;
-  background: var(--ab-control);
-  font-size: 10px;
-}
-
-.search-filters span:first-child {
-  color: white;
-  background: var(--ab-navy);
-}
-
-.reports-section {
-  margin-top: 38px;
-}
-
-.reports-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-}
-
-.reports-title > span {
-  color: var(--ab-muted);
-  font-size: 11px;
-}
-
-.reports-table {
-  overflow: hidden;
-  border: 1px solid var(--ab-line);
-  border-radius: 9px;
-  background: white;
-  box-shadow: 0 3px 8px rgba(37, 47, 56, 0.05);
-}
-
-.reports-row {
-  display: grid;
-  grid-template-columns: minmax(260px, 1.5fr) 170px 150px 90px;
-  gap: 16px;
-  align-items: center;
-  min-height: 70px;
-  padding: 14px 24px;
-  border-top: 1px solid var(--ab-line);
-  font-size: 12px;
-}
-
-.reports-head {
-  min-height: 50px;
-  border-top: 0;
-  color: #596572;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.reports-row > div {
-  display: grid;
-  gap: 4px;
-}
-
-.reports-row small {
-  color: var(--ab-muted);
-}
-
-.report-status {
-  justify-self: start;
-  padding: 4px 7px;
-  border-radius: 4px;
-  color: var(--ab-green);
-  background: #e1f4e9;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.reports-empty {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  min-height: 112px;
-  padding: 22px 24px;
-  border-top: 1px solid var(--ab-line);
-}
-
-.reports-empty > div {
-  flex: 1;
-}
-
-.reports-empty p {
-  margin: 5px 0 0;
-  color: var(--ab-muted);
-  font-size: 12px;
-}
-
-.empty-report-icon {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 8px;
-  color: var(--ab-muted);
-  background: var(--ab-control);
-}
-
 .support-stub {
   position: fixed;
   right: 20px;
@@ -679,28 +540,19 @@ h3,
 }
 
 /* Диалог проверки с ИИ */
-.ai-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
+.ai-panel {
   display: grid;
-  place-items: center;
-  padding: 28px;
-  background: rgba(16, 22, 28, 0.7);
-}
-
-.ai-dialog {
-  display: grid;
-  grid-template-rows: 72px 1fr;
-  width: min(1380px, 100%);
-  height: min(850px, calc(100vh - 56px));
+  grid-template-rows: 68px 1fr;
+  flex: 1;
+  min-height: 680px;
   overflow: hidden;
+  border: 1px solid var(--ab-line);
   border-radius: 10px;
   background: white;
-  box-shadow: 0 24px 80px rgba(5, 10, 15, 0.4);
+  scroll-margin-top: 18px;
 }
 
-.ai-dialog-header {
+.ai-panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -708,7 +560,7 @@ h3,
   border-bottom: 1px solid var(--ab-line);
 }
 
-.ai-dialog-header > div,
+.ai-panel-header > div,
 .ai-header-actions {
   display: flex;
   gap: 12px;
@@ -725,26 +577,33 @@ h3,
   background: var(--ab-red);
 }
 
-.ai-dialog-header h2 {
+.ai-panel-header h2 {
   margin: 0;
   font-size: 19px;
 }
 
-.ai-dialog-header p {
+.ai-panel-header p {
   margin: 3px 0 0;
   color: var(--ab-muted);
   font-size: 11px;
 }
 
-.close-dialog {
-  width: 40px !important;
-  padding: 0 !important;
+.ai-panel-body {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 30px minmax(300px, 370px);
+  /* без ограниченной строки колонка чата растёт по содержимому и вылезает из панели */
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0;
+  transition: grid-template-columns 280ms cubic-bezier(.16, 1, .3, 1);
 }
 
-.ai-dialog-body {
-  display: grid;
-  grid-template-columns: 200px minmax(410px, 1fr) minmax(330px, 390px);
-  min-height: 0;
+.ai-panel-body.report-collapsed {
+  grid-template-columns: 200px minmax(0, 1fr) 30px 0;
+}
+
+.ai-panel-body.report-collapsed .ai-report-panel {
+  border-left: 0;
+  opacity: 0;
 }
 
 .ai-sessions {
@@ -776,12 +635,60 @@ h3,
   border-radius: 6px !important;
 }
 
-.ai-sessions > div button.active {
-  background: white !important;
+.session-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+/* отступ только у кнопки сессии: под корзину, иначе название заезжает на неё */
+.session-row > button:not(.session-delete) {
+  padding-right: 38px !important;
+}
+
+.session-row.active {
+  background: white;
   box-shadow: inset 2px 0 var(--ab-red);
 }
 
-.ai-sessions button span {
+.session-delete {
+  position: absolute;
+  right: 4px;
+  width: 32px !important;
+  min-width: 32px !important;
+  padding: 0 !important;
+  color: var(--ab-muted) !important;
+  opacity: 0;
+}
+
+.session-row:hover .session-delete,
+.session-delete:focus-visible {
+  opacity: 1;
+}
+
+.session-delete:hover {
+  color: var(--ab-red) !important;
+}
+
+.session-confirm {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  gap: 3px;
+  padding: 2px;
+  border-radius: 6px;
+  background: white;
+  box-shadow: 0 2px 10px rgba(16, 22, 28, 0.18);
+}
+
+.session-confirm button {
+  min-width: 42px !important;
+  padding: 0 8px !important;
+  font-size: 11px !important;
+}
+
+.ai-sessions > div button span {
   display: grid;
   gap: 3px;
   width: 100%;
@@ -789,52 +696,98 @@ h3,
   text-align: left;
 }
 
-.ai-sessions button strong {
+.ai-sessions > div button strong {
   overflow: hidden;
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ai-sessions button small {
+.ai-sessions > div button small {
   color: var(--ab-muted);
   font-size: 9px;
 }
 
 .ai-chat {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: 1fr auto;
   min-width: 0;
   min-height: 0;
   background: white;
 }
 
-.ai-role-switch {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  min-height: 51px;
-  padding: 8px 18px;
-  border-bottom: 1px solid var(--ab-line);
+.report-gutter {
+  display: grid;
+  place-items: center;
+  background: white;
 }
 
-.ai-role-switch > span {
+.report-toggle {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--ab-line);
+  border-radius: 7px;
   color: var(--ab-muted);
-  font-size: 10px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(16, 22, 28, 0.1);
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
 }
 
-.ai-role-switch > div {
-  display: flex;
-  gap: 2px;
+.report-toggle:hover {
+  color: var(--ab-red);
+  border-color: var(--ab-red);
+}
+
+.report-toggle svg {
+  transition: transform 280ms cubic-bezier(.16, 1, .3, 1);
+}
+
+.report-collapsed .report-toggle svg {
+  transform: rotate(180deg);
+}
+
+.load-earlier {
+  align-self: center;
+  flex: none;
 }
 
 .ai-messages {
   display: flex;
   flex-direction: column;
-  gap: 20px;
   min-height: 0;
-  padding: 25px clamp(22px, 4vw, 52px);
+  padding: 28px clamp(20px, 3vw, 40px);
   overflow-y: auto;
+}
+
+/* колонка чтения: ширину держит обёртка, чтобы у реплик осталась своя */
+.ai-thread {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 22px;
+  width: min(100%, 760px);
+  margin-inline: auto;
+  transition: width 280ms cubic-bezier(.16, 1, .3, 1);
+}
+
+.ai-composer > div:last-of-type,
+.ai-composer > small,
+.composer-error {
+  width: min(100%, 760px);
+  margin-inline: auto;
+  transition: width 280ms cubic-bezier(.16, 1, .3, 1);
+}
+
+/* отчёт скрыт — диалогу отдаётся вся ширина, иначе текст висит посреди пустого окна */
+.report-collapsed .ai-thread,
+.report-collapsed .ai-composer > div:last-of-type,
+.report-collapsed .ai-composer > small,
+.report-collapsed .composer-error {
+  width: 100%;
 }
 
 .loading-state {
@@ -882,8 +835,8 @@ h3,
   line-height: 1.5;
 }
 
-.ai-message {
-  width: min(100%, 640px);
+.ai-message p {
+  font-size: 14px;
 }
 
 .ai-message > span {
@@ -929,15 +882,59 @@ h3,
 }
 
 .ai-composer {
-  padding: 13px clamp(18px, 4vw, 48px) 15px;
+  padding: 14px clamp(20px, 3vw, 40px) 16px;
   border-top: 1px solid var(--ab-line);
 }
 
 .ai-composer > div:last-of-type {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 56px;
-  gap: 7px;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  gap: 8px;
   align-items: end;
+}
+
+.composer-settings {
+  position: relative;
+}
+
+.settings-button {
+  width: 44px !important;
+  min-width: 44px !important;
+  padding: 0 !important;
+  color: var(--ab-muted) !important;
+}
+
+.settings-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 2px;
+  width: 190px;
+  padding: 10px;
+  border: 1px solid var(--ab-line);
+  border-radius: 9px;
+  background: white;
+  box-shadow: 0 10px 28px rgba(16, 22, 28, 0.16);
+}
+
+.settings-popover > p {
+  margin: 0 0 6px 6px;
+  color: var(--ab-muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.settings-popover button {
+  justify-content: flex-start !important;
+}
+
+.settings-popover button span {
+  width: 100%;
+  text-align: left;
 }
 
 .ai-composer > small {
@@ -948,7 +945,8 @@ h3,
 }
 
 .send-button {
-  width: 56px !important;
+  width: 44px !important;
+  min-width: 44px !important;
   padding: 0 !important;
 }
 
@@ -958,6 +956,7 @@ h3,
   overflow: hidden;
   border-left: 1px solid var(--ab-line);
   background: var(--ab-bg);
+  transition: opacity 180ms ease;
 }
 
 .ai-dossier {
@@ -1122,8 +1121,8 @@ h3,
     grid-template-columns: repeat(2, minmax(220px, 1fr));
   }
 
-  .ai-dialog-body {
-    grid-template-columns: 170px minmax(390px, 1fr) 330px;
+  .ai-panel-body {
+    grid-template-columns: 170px minmax(0, 1fr) minmax(280px, 330px);
   }
 }
 
@@ -1165,23 +1164,22 @@ h3,
     margin-bottom: 20px;
     font-size: 29px;
   }
-
-  .reports-row {
-    grid-template-columns: minmax(220px, 1fr) 120px 120px 80px;
+  .ai-panel {
+    min-height: 460px;
   }
 
-  .ai-overlay {
-    padding: 0;
+  /* на узком экране панелями управляют вкладки «Чат / Отчёт», а не кнопка на границе */
+  .report-toggle {
+    display: none;
   }
 
-  .ai-dialog {
-    width: 100%;
-    height: 100vh;
-    border-radius: 0;
+  .ai-panel-body,
+  .ai-panel-body.report-collapsed {
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
   }
 
-  .ai-dialog-body {
-    grid-template-columns: minmax(0, 1fr) 330px;
+  .report-gutter {
+    display: none;
   }
 
   .ai-sessions {
@@ -1232,56 +1230,13 @@ h3,
   .service-card {
     min-height: 132px !important;
   }
-
-  .contractor-search-card {
-    padding: 20px 15px 16px;
-  }
-
-  .search-filters {
-    overflow-x: auto;
-  }
-
-  .reports-title {
-    display: block;
-  }
-
-  .reports-title > span {
-    display: block;
-    margin: -10px 0 14px;
-  }
-
-  .reports-head {
-    display: none;
-  }
-
-  .reports-row:not(.reports-head) {
-    grid-template-columns: 1fr auto;
-    gap: 12px;
-    padding: 17px;
-  }
-
-  .reports-row:not(.reports-head) > span:nth-child(2) {
-    display: none;
-  }
-
-  .reports-empty {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .reports-empty .empty-report-icon {
-    display: none;
-  }
-
-  .reports-empty button {
-    width: 100%;
-  }
-
-  .ai-dialog {
+  .ai-panel {
     grid-template-rows: 67px 43px 1fr;
+    height: calc(100vh - 130px);
+    min-height: 460px;
   }
 
-  .ai-dialog-header {
+  .ai-panel-header {
     padding: 0 10px 0 14px;
   }
 
@@ -1290,11 +1245,11 @@ h3,
     height: 34px;
   }
 
-  .ai-dialog-header h2 {
+  .ai-panel-header h2 {
     font-size: 16px;
   }
 
-  .ai-header-actions > button:first-child {
+  .ai-header-actions > button:last-child {
     display: none;
   }
 
@@ -1306,7 +1261,7 @@ h3,
     background: white;
   }
 
-  .ai-dialog-body {
+  .ai-panel-body {
     display: block;
     min-height: 0;
   }
@@ -1321,26 +1276,12 @@ h3,
     display: none !important;
   }
 
-  .ai-role-switch {
-    display: block;
-    padding: 8px 10px;
-  }
+  .load-earlier {
+  align-self: center;
+  flex: none;
+}
 
-  .ai-role-switch > span {
-    display: none;
-  }
-
-  .ai-role-switch > div {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    width: 100%;
-  }
-
-  .ai-role-switch > div button {
-    width: 100%;
-  }
-
-  .ai-messages {
+.ai-messages {
     padding: 20px 16px;
   }
 
@@ -1371,12 +1312,12 @@ h3,
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .ai-dialog {
-    animation: dialog-enter 260ms cubic-bezier(.16, 1, .3, 1);
+  .ai-panel {
+    animation: panel-enter 260ms cubic-bezier(.16, 1, .3, 1);
   }
 }
 
-@keyframes dialog-enter {
+@keyframes panel-enter {
   from {
     opacity: 0.35;
     transform: translateY(18px) scale(0.985);

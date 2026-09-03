@@ -309,6 +309,7 @@ create index on session_analyses (session_id, created_at desc);
     "status": "CURRENT",
     "registered": "2008-05-14", "age_years": 18,
     "company_size": "Крупные предприятия",
+    "entity_kind": "organization",           // organization | sole_proprietor
     "staff": null,                          // null = НЕТ ДАННЫХ, не ноль
     "address": "...", "email": null, "website": null,
     "main_okved": {"code": "46.90", "description": "..."},
@@ -334,22 +335,25 @@ create index on session_analyses (session_id, created_at desc);
     "by_year": [{"year": 2025, "defendant_count": 12, "defendant_amount": 20000000}]
   },
   "execution_proceedings": {
-    "total": 1744, "active": 45,
-    "active_amount": 254507229,
+    "total": 1744, "total_amount": 254507229,
+    "active": 45, "active_amount": 1571231,
     "top_active": [{"number": "...", "date": "2026-05-12", "amount": 18000000}],  // 5 шт.
     "by_year": {"2024": 610, "2025": 890, "2026": 244}
   },
   "risk_factors": {
     "negative": [{"code": "executionProceedings", "chapter": "execproc", "name": "..."}],
     "positive": [{"code": "taxArrears", "chapter": "reestrs", "name": "..."}],
-    "negative_count": 3
+    "negative_shown": 1,        // видимых при фильтре по роли
+    "negative_total": 3,        // всего у контрагента — на это ссылается детектор
+    "filtered_by_role": true
   },
   "discrepancies": [
     {"code": "green_but_execproc",
      "text": "Светофор зелёный, но 45 активных исполнительных производств на 254,5 млн ₽"}
   ],
   "related_companies_count": 12,
-  "missing_data": ["staff", "email", "website", "coefficient", "profit_2024"]
+  "missing_data": ["staff", "email", "website", "coefficient", "profit_2024"],
+  "not_applicable": []                      // для ИП: КПП, учредители, уставный капитал
 }
 ```
 
@@ -690,20 +694,35 @@ class AgentFinalAnswerToClient(AgentBasicAnswerToClient, AgentReport):
 
 | Метод | Ручка | Назначение |
 |---|---|---|
-| `POST` | `/api/auth/login` | базовый вход, логин/пароль из конфига → `user_id` + токен |
-| `POST` | `/api/users` | создать пользователя, вернуть `user_id` |
-| `POST` | `/api/sessions` | создать сессию (`user_id`, `role_preset`) |
-| `GET` | `/api/sessions?user_id=` | список сессий |
-| `GET` | `/api/sessions/{id}/messages` | история |
-| `POST` | `/api/chat` | основная: `{session_id, user_id, message, role_preset?, buttons?}` |
-| `GET` | `/api/sessions/{id}/analyses` | список анализов сессии (основа якоря, §10.1) |
+| `POST` | `/api/auth/login` | вход по логину и паролю из конфига → `user_id` и подписанный токен |
+| `GET` | `/api/me` | профиль текущего пользователя и счётчики использования |
+| `GET` | `/api/sessions` | список сессий текущего пользователя (берётся из токена) |
+| `POST` | `/api/sessions` | создать сессию с выбранной ролью |
+| `PATCH` | `/api/sessions/{id}` | сменить роль анализа у сессии |
+| `DELETE` | `/api/sessions/{id}` | удалить сессию; сообщения и связи с анализами уходят каскадом, сами анализы остаются в кэше |
+| `GET` | `/api/sessions/{id}/messages` | история сессии, страницами: `limit`, `before_id` |
+| `POST` | `/api/sessions/{id}/messages` | добавить сообщение вручную |
+| `POST` | `/api/chat` | основная: разбирает ИНН, собирает факт-пакет, сохраняет анализ, возвращает ответ вместе с сохранёнными сообщениями и сессией |
+| `GET` | `/api/sessions/{id}/analyses` | что разобрано в сессии — основа якоря (§10.1) |
 | `GET` | `/api/sessions/{id}/report` | последний отчёт сессии |
-| `PUT` | `/api/sessions/{id}/report` | обновить summary/analysis |
+| `PUT` | `/api/sessions/{id}/report` | обновить summary и разбор |
+| `GET` | `/api/sessions/{id}/report/export?format=json\|md` | выгрузка; имя файла `report-<ИНН>-<дата отчёта>`. Интерфейс скачивает JSON — он несёт весь факт-пакет, Markdown остаётся доступен через API |
 | `GET` | `/api/analyses/{inn}` | сохранённый анализ по контрагенту (кэш между сессиями) |
-| `GET` | `/api/sessions/{id}/report/export?format=json\|md\|pdf` | выгрузка |
-| `GET` | `/api/contractors/{inn}` | карточка для виджетов (в обход агента) |
-| `POST` | `/api/compare` | `{inns: [...]}` → сводная таблица |
-| `GET` | `/api/health` | статус БД и LLM API |
+| `GET` | `/api/contractors/{inn}` | факт-пакет для карточки |
+| `POST` | `/api/compare` | `{inns: [...]}` → найденные контрагенты плюс списки `missing` и `invalid`; частичный результат не является ошибкой |
+| `GET` | `/api/health` | статус приложения и доступность БД |
+
+Токен подписывается HMAC с TTL из конфига. Если секрет остался значением
+по умолчанию, приложение стартует, но пишет предупреждение в лог —
+ломать запуск из-за незаполненного `.env` нельзя.
+
+**История сообщений не хранит факт-пакеты.** В `messages.meta` кладётся только
+ИНН и признак degraded; сам отчёт живёт в `analyses` и отдаётся через
+`/api/sessions/{id}/report`. Это согласовано с §10.1, где факт-пакеты из истории
+вырезаются при сборке контекста.
+
+**Название сессии** проставляется автоматически по первому разобранному
+контрагенту, если пользователь не задал своё.
 
 ---
 
@@ -717,8 +736,8 @@ Next.js не используется: SSR не нужен, бэкенд — Fas
 Экраны: окно авторизации (логин/пароль, один пользователь) → основной экран.
 
 Основной экран — три зоны:
-* слева — список сессий, кнопка «Новая сессия»;
-* центр — чат, кнопки выбора роли анализа, кнопка выгрузки отчёта;
+* слева — список сессий с удалением, кнопка «Новая проверка»;
+* центр — чат; роль анализа выбирается в настройках рядом с полем ввода;
 * справа — карточка контрагента: светофор `risk_level`, отдельно ЗСК,
   плашка расхождения, выручка/прибыль за 3 года, арбитраж истец/ответчик,
   активные исполнительные производства, список факторов риска, связанные компании.
