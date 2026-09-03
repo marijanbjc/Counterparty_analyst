@@ -15,7 +15,13 @@ def cmd_load_data(args: argparse.Namespace) -> None:
 
 
 def cmd_serve(args: argparse.Namespace) -> None:
-    raise SystemExit("Команда serve появится на этапе 2 (FastAPI + UI).")
+    import uvicorn
+
+    from src.config.settings import get_settings
+    from src.webapp.app import create_app
+
+    settings = get_settings()
+    uvicorn.run(create_app(), host=settings.app_host, port=settings.app_port)
 
 
 def cmd_mcp(args: argparse.Namespace) -> None:
