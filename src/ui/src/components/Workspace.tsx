@@ -566,9 +566,6 @@ export function Workspace(props: Props) {
             )}
           />
         </main>
-        <Button className="support-stub" view="transparent" size={48} aria-label="Поддержка" disabled>
-          <span>?</span>
-        </Button>
       </div>
     </div>
   )
