@@ -1,0 +1,37 @@
+app_host: 0.0.0.0
+app_port: 8000
+app_debug: false
+
+postgres_host: localhost
+postgres_port: 5432
+postgres_db: contractors
+postgres_user: postgres
+postgres_password: ""
+
+snapshot_path: docs/internal_files/contractors_audit.snapshot.json
+
+llm_base_url: https://api.groq.com/openai/v1
+llm_model: openai/gpt-oss-120b
+llm_api_key: ""
+llm_timeout_seconds: 60
+llm_max_retries: 2
+
+auth_login: admin
+auth_password: ""
+auth_token_ttl_hours: 24
+auth_token_secret: dev-insecure-secret-change-in-env
+
+cors_origins:
+  - http://localhost:5173
+  - http://127.0.0.1:5173
+
+context_token_budget: 8000
+context_anchor_max_contractors: 5
+
+risk_active_execproc_revenue_share: 0.05
+risk_active_execproc_absolute: 10000000
+risk_active_execproc_count_without_revenue: 10
+risk_negative_factors_threshold: 3
+risk_many_execproc_threshold: 100
+
+zsk_mask_yellow_red: false
