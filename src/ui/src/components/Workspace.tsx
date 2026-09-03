@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Button } from '@alfalab/core-components/button'
-import { Input } from '@alfalab/core-components/input'
 import { Spinner } from '@alfalab/core-components/spinner'
 import { Textarea } from '@alfalab/core-components/textarea'
 
 import { api, ApiError } from '../api'
-import { date, money, number, riskName, riskTone } from '../format'
+import { date, entityKind, money, number, riskName, riskTone } from '../format'
 import type {
   AuthState,
   FactPack,
@@ -33,14 +32,17 @@ type Props = {
   onLogout: () => void
   onCreateSession: () => Promise<void>
   onSelectSession: (session: Session) => Promise<void>
+  onDeleteSession: (session: Session) => Promise<void>
   onSessionUpdated: (session: Session) => void
-  onMessageAdded: (message: Message, pack: FactPack) => void
+  onChatCompleted: (messages: Message[], pack: FactPack, session: Session) => void
+  hasMore: boolean
+  onLoadEarlier: () => Promise<void>
 }
 
 type IconName =
   | 'briefcase' | 'card' | 'chevron' | 'close' | 'compare' | 'contractors'
   | 'download' | 'gear' | 'lock' | 'logo' | 'payment' | 'plus' | 'search'
-  | 'send' | 'shield' | 'spark' | 'statement' | 'users'
+  | 'send' | 'shield' | 'spark' | 'statement' | 'trash' | 'users' | 'arrow'
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
@@ -57,6 +59,8 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     search: <><circle cx="10" cy="10" r="6" /><path d="m15 15 5 5" /></>,
     spark: <><path d="m12 3 1.7 5.3L19 10l-5.3 1.7L12 17l-1.7-5.3L5 10l5.3-1.7Z" /><path d="m18 16 .7 2.3L21 19l-2.3.7L18 22l-.7-2.3L15 19l2.3-.7Z" /></>,
     gear: <><circle cx="12" cy="12" r="3" /><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L14.5 3h-5L9 6a8 8 0 0 0-1.7 1L5 6 3 9.5 5 11a7 7 0 0 0 0 2l-2 1.5L5 18l2.3-1a8 8 0 0 0 1.7 1l.5 3h5l.4-3a8 8 0 0 0 1.7-1l2.4 1 2-3.5-2.1-1.5a7 7 0 0 0 .1-1Z" /></>,
+    arrow: <><path d="M5 12h13" /><path d="m12 6 6 6-6 6" /></>,
+    trash: <><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /><path d="M10 11v6M14 11v6" /></>,
     send: <><path d="m4 4 17 8-17 8 3-8-3-8Z" /><path d="M7 12h14" /></>,
     close: <path d="m6 6 12 12M18 6 6 18" />,
     download: <><path d="M12 3v12m0 0 4-4m-4 4-4-4" /><path d="M5 20h14" /></>,
@@ -163,97 +167,29 @@ function ProfileMenu({ profile, onLogout }: { profile: Profile | null; onLogout:
   )
 }
 
-function ServiceCard({
-  title,
-  text,
-  icon,
-  ai,
-  onClick,
-}: {
-  title: string
-  text: string
-  icon: IconName
-  ai?: boolean
-  onClick?: () => void
-}) {
+function ServiceCard({ title, text, icon, ai }: { title: string; text: string; icon: IconName; ai?: boolean }) {
   return (
-    <Button
-      view="transparent"
-      className={`service-card ${ai ? 'service-card-ai' : ''}`}
-      onClick={onClick}
-      disabled={!ai}
-    >
+    <div className={`service-card ${ai ? 'service-card-ai' : ''}`}>
       <span className="service-icon"><Icon name={icon} size={20} /></span>
       <span className="service-copy">
         <strong>{title}</strong>
         <span>{text}</span>
       </span>
-      {ai && <span className="ai-card-action">Открыть <Icon name="chevron" size={14} /></span>}
-    </Button>
+    </div>
   )
 }
 
-function ContractorsPage({
-  currentPack,
-  onOpenAi,
-}: {
-  currentPack: FactPack | null
-  onOpenAi: () => void
-}) {
+function ContractorsPage({ aiPanel }: { aiPanel: ReactNode }) {
   return (
     <div className="contractors-page">
       <h1>Контрагенты</h1>
       <section className="services-grid" aria-label="Сервисы для контрагентов">
         {SERVICES.map((service) => (
-          <ServiceCard
-            key={service.title}
-            {...service}
-            onClick={service.ai ? onOpenAi : undefined}
-          />
+          <ServiceCard key={service.title} {...service} />
         ))}
       </section>
 
-      <section className="contractor-search-card">
-        <h2>Проверить контрагента</h2>
-        <Input
-          block
-          size={48}
-          placeholder="Поиск по названию компании, директору или ИНН"
-          rightAddons={<Icon name="search" size={20} />}
-          aria-label="Поиск контрагента"
-        />
-        <div className="search-filters">
-          <span>Все</span>
-          <span>Российские</span>
-          <span>Иностранные</span>
-        </div>
-      </section>
-
-      <section className="reports-section">
-        <div className="reports-title">
-          <h2>Полные отчёты</h2>
-          <span>Результаты проверок в этом прототипе</span>
-        </div>
-        <div className="reports-table">
-          <div className="reports-row reports-head">
-            <span>Контрагент</span><span>Дата отчёта</span><span>Статус</span><span />
-          </div>
-          {currentPack ? (
-            <div className="reports-row">
-              <div><strong>{currentPack.short_name}</strong><small>ИНН {currentPack.inn} · ОГРН {currentPack.ogrn}</small></div>
-              <span>{date(currentPack.as_of)}</span>
-              <span className="report-status">Сформирован</span>
-              <Button view="secondary" size={32} onClick={onOpenAi}>Открыть</Button>
-            </div>
-          ) : (
-            <div className="reports-empty">
-              <span className="empty-report-icon"><Icon name="statement" size={24} /></span>
-              <div><strong>Отчётов пока нет</strong><p>Откройте «Проверку с ИИ» и отправьте ИНН.</p></div>
-              <Button view="secondary" size={40} onClick={onOpenAi}>Начать проверку</Button>
-            </div>
-          )}
-        </div>
-      </section>
+      {aiPanel}
     </div>
   )
 }
@@ -276,7 +212,7 @@ function Dossier({ pack }: { pack: FactPack | null }) {
           {riskName(pack.verdict_basis.risk_level)}
         </span>
         <h3>{pack.short_name}</h3>
-        <p>ИНН {pack.inn} · ОГРН {pack.ogrn}</p>
+        <p>{entityKind(pack.profile.entity_kind)} · ИНН {pack.inn} · ОГРН {pack.ogrn}</p>
         <div className="zsk-line">
           <span>Оценка ЗСК</span>
           <b>{pack.verdict_basis.zsk_risk_level || 'Нет данных'}</b>
@@ -318,24 +254,29 @@ function Dossier({ pack }: { pack: FactPack | null }) {
   )
 }
 
-function AiDialog({
+function AiPanel({
   auth,
   sessions,
   activeSession,
   messages,
   currentPack,
   loading,
-  onClose,
   onCreateSession,
   onSelectSession,
+  onDeleteSession,
   onSessionUpdated,
-  onMessageAdded,
-}: Omit<Props, 'profile' | 'onLogout'> & { onClose: () => void }) {
+  onChatCompleted,
+  hasMore,
+  onLoadEarlier,
+}: Omit<Props, 'profile' | 'onLogout'>) {
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mobileView, setMobileView] = useState<'chat' | 'report'>('chat')
-  const dialogRef = useRef<HTMLDivElement>(null)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(true)
+  const settingsRef = useRef<HTMLDivElement>(null)
   const role = activeSession?.role_preset || 'general'
   const orderedMessages = useMemo(
     () => messages.filter((item) => item.role === 'user' || item.role === 'assistant'),
@@ -343,30 +284,22 @@ function AiDialog({
   )
 
   useEffect(() => {
-    dialogRef.current?.focus()
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
-      if (event.key === 'Tab' && dialogRef.current) {
-        const focusable = Array.from(
-          dialogRef.current.querySelectorAll<HTMLElement>(
-            'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-          ),
-        )
-        if (focusable.length === 0) return
-        const first = focusable[0]
-        const last = focusable[focusable.length - 1]
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault()
-          last.focus()
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault()
-          first.focus()
-        }
-      }
+    if (!settingsOpen) return
+    const close = (event: PointerEvent) => {
+      if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false)
     }
-    document.addEventListener('keydown', escape)
-    return () => document.removeEventListener('keydown', escape)
-  }, [onClose])
+    document.addEventListener('pointerdown', close)
+    return () => document.removeEventListener('pointerdown', close)
+  }, [settingsOpen])
+
+  const removeSession = async (session: Session) => {
+    setConfirmDelete(null)
+    try {
+      await onDeleteSession(session)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Не удалось удалить проверку.')
+    }
+  }
 
   const changeRole = async (nextRole: RolePreset) => {
     if (!activeSession || nextRole === role) return
@@ -385,22 +318,7 @@ function AiDialog({
     try {
       const content = message.trim()
       const response = await api.chat(auth.token, activeSession.id, content, role)
-      onMessageAdded({
-        id: Date.now(),
-        session_id: activeSession.id,
-        role: 'user',
-        content,
-        meta: null,
-        created_at: new Date().toISOString(),
-      }, response.report)
-      onMessageAdded({
-        id: Date.now() + 1,
-        session_id: activeSession.id,
-        role: 'assistant',
-        content: response.answer,
-        meta: { inn: response.report.inn, report: response.report, degraded: true },
-        created_at: new Date().toISOString(),
-      }, response.report)
+      onChatCompleted(response.messages, response.report, response.session)
       setMessage('')
       setMobileView('report')
     } catch (reason) {
@@ -411,37 +329,31 @@ function AiDialog({
   }
 
   return (
-    <div className="ai-overlay" role="presentation" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose()
-    }}>
-      <div className="ai-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="ai-dialog-title" tabIndex={-1}>
-        <header className="ai-dialog-header">
-          <div>
-            <span className="ai-title-icon"><Icon name="spark" size={20} /></span>
-            <div><h2 id="ai-dialog-title">Проверка с ИИ</h2><p>Анализ контрагента по данным отчёта</p></div>
-          </div>
-          <div className="ai-header-actions">
-            <Button
-              view="secondary"
-              size={40}
-              leftAddons={<Icon name="download" size={16} />}
-              disabled={!currentPack || !activeSession}
-              onClick={() => activeSession && void api.exportReport(auth.token, activeSession.id, 'md')}
-            >
-              Скачать
-            </Button>
-            <Button view="transparent" size={40} className="close-dialog" aria-label="Закрыть" onClick={onClose}>
-              <Icon name="close" size={22} />
-            </Button>
-          </div>
-        </header>
+    <section className="ai-panel" aria-labelledby="ai-panel-title">
+      <header className="ai-panel-header">
+        <div>
+          <span className="ai-title-icon"><Icon name="spark" size={20} /></span>
+          <div><h2 id="ai-panel-title">Проверка с ИИ</h2><p>Анализ контрагента по данным отчёта</p></div>
+        </div>
+        <div className="ai-header-actions">
+          <Button
+            view="secondary"
+            size={40}
+            leftAddons={<Icon name="download" size={16} />}
+            disabled={!currentPack || !activeSession}
+            onClick={() => activeSession && void api.exportReport(auth.token, activeSession.id)}
+          >
+            Скачать JSON
+          </Button>
+        </div>
+      </header>
 
         <nav className="ai-mobile-tabs" aria-label="Чат и отчёт" role="tablist">
           <Button role="tab" aria-selected={mobileView === 'chat'} view={mobileView === 'chat' ? 'primary' : 'transparent'} size={32} onClick={() => setMobileView('chat')}>Чат</Button>
           <Button role="tab" aria-selected={mobileView === 'report'} view={mobileView === 'report' ? 'primary' : 'transparent'} size={32} onClick={() => setMobileView('report')}>Отчёт</Button>
         </nav>
 
-        <div className="ai-dialog-body">
+        <div className={`ai-panel-body ${reportOpen ? '' : 'report-collapsed'}`}>
           <aside className="ai-sessions">
             <Button view="secondary" size={40} block leftAddons={<Icon name="plus" size={16} />} onClick={() => void onCreateSession()}>
               Новая проверка
@@ -449,40 +361,40 @@ function AiDialog({
             <p>История</p>
             <div>
               {sessions.map((session, index) => (
-                <Button
-                  key={session.id}
-                  view="transparent"
-                  size={48}
-                  block
-                  className={activeSession?.id === session.id ? 'active' : ''}
-                  onClick={() => void onSelectSession(session)}
-                >
-                  <span><strong>{session.title || `Проверка ${sessions.length - index}`}</strong><small>{date(session.created_at)}</small></span>
-                </Button>
+                <div key={session.id} className={`session-row ${activeSession?.id === session.id ? 'active' : ''}`}>
+                  <Button view="transparent" size={48} block onClick={() => void onSelectSession(session)}>
+                    <span><strong>{session.title || `Проверка ${sessions.length - index}`}</strong><small>{date(session.created_at)}</small></span>
+                  </Button>
+                  {confirmDelete === session.id ? (
+                    <div className="session-confirm">
+                      <Button view="primary" size={32} onClick={() => void removeSession(session)}>Да</Button>
+                      <Button view="secondary" size={32} onClick={() => setConfirmDelete(null)}>Нет</Button>
+                    </div>
+                  ) : (
+                    <Button
+                      view="transparent"
+                      size={32}
+                      className="session-delete"
+                      aria-label={`Удалить проверку ${session.title || ''}`}
+                      onClick={() => setConfirmDelete(session.id)}
+                    >
+                      <Icon name="trash" size={15} />
+                    </Button>
+                  )}
+                </div>
               ))}
             </div>
           </aside>
 
           <section className={`ai-chat ${mobileView !== 'chat' ? 'mobile-panel-hidden' : ''}`}>
-            <div className="ai-role-switch">
-              <span>Фокус анализа</span>
-              <div>
-                {ROLES.map((item) => (
-                  <Button
-                    key={item.value}
-                    view={item.value === role ? 'primary' : 'transparent'}
-                    size={32}
-                    disabled={!activeSession}
-                    aria-pressed={item.value === role}
-                    onClick={() => void changeRole(item.value)}
-                  >
-                    {item.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
             <div className="ai-messages" aria-live="polite">
+              <div className="ai-thread">
               {loading && <div className="loading-state"><Spinner visible preset={24} />Загружаем историю</div>}
+              {!loading && hasMore && (
+                <Button view="secondary" size={32} className="load-earlier" onClick={() => void onLoadEarlier()}>
+                  Показать более ранние
+                </Button>
+              )}
               {!loading && orderedMessages.length === 0 && (
                 <div className="ai-welcome">
                   <span><Icon name="spark" size={24} /></span>
@@ -500,10 +412,46 @@ function AiDialog({
                   {item.meta?.degraded && <small>Детерминированный отчёт · без языковой модели</small>}
                 </article>
               ))}
+              </div>
             </div>
             <form className="ai-composer" onSubmit={submit}>
               {error && <div className="composer-error" role="alert">{error}</div>}
               <div>
+                <div className="composer-settings" ref={settingsRef}>
+                  <Button
+                    view="transparent"
+                    size={48}
+                    className="settings-button"
+                    aria-label="Настройки анализа"
+                    aria-haspopup="menu"
+                    aria-expanded={settingsOpen}
+                    disabled={!activeSession}
+                    onClick={() => setSettingsOpen(!settingsOpen)}
+                  >
+                    <Icon name="gear" size={18} />
+                  </Button>
+                  {settingsOpen && (
+                    <div className="settings-popover" role="menu">
+                      <p>Фокус анализа</p>
+                      {ROLES.map((item) => (
+                        <Button
+                          key={item.value}
+                          role="menuitemradio"
+                          aria-checked={item.value === role}
+                          view={item.value === role ? 'primary' : 'transparent'}
+                          size={32}
+                          block
+                          onClick={() => {
+                            setSettingsOpen(false)
+                            void changeRole(item.value)
+                          }}
+                        >
+                          {item.label}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <Textarea
                   block
                   autosize
@@ -523,7 +471,7 @@ function AiDialog({
                 <Button
                   type="submit"
                   view="accent"
-                  size={56}
+                  size={48}
                   className="send-button"
                   loading={sending}
                   disabled={!activeSession || !message.trim()}
@@ -532,42 +480,40 @@ function AiDialog({
                   <Icon name="send" size={20} />
                 </Button>
               </div>
-              <small>Пока отвечает детерминированный backend. Агент будет подключён позже.</small>
+              <small>
+                Фокус анализа: {ROLES.find((item) => item.value === role)?.label}. Пока отвечает
+                детерминированный backend, агент будет подключён позже.
+              </small>
             </form>
           </section>
-          <div className={`ai-report-panel ${mobileView !== 'report' ? 'mobile-panel-hidden' : ''}`}>
-            <Dossier pack={currentPack} />
-          </div>
+        <div className="report-gutter">
+          <button
+            type="button"
+            className="report-toggle"
+            onClick={() => setReportOpen(!reportOpen)}
+            aria-expanded={reportOpen}
+            aria-label={reportOpen ? 'Скрыть отчёт о контрагенте' : 'Показать отчёт о контрагенте'}
+            title={reportOpen ? 'Скрыть отчёт' : 'Показать отчёт'}
+          >
+            <Icon name="arrow" size={16} />
+          </button>
+        </div>
+        <div className={`ai-report-panel ${mobileView !== 'report' ? 'mobile-panel-hidden' : ''}`}>
+          <Dossier pack={currentPack} />
         </div>
       </div>
-    </div>
+    </section>
   )
 }
 
 export function Workspace(props: Props) {
   const {
     auth, profile, sessions, activeSession, messages, currentPack, loading,
-    onLogout, onCreateSession, onSelectSession, onSessionUpdated, onMessageAdded,
+    onLogout, onCreateSession, onSelectSession, onDeleteSession, onSessionUpdated, onChatCompleted,
+    hasMore, onLoadEarlier,
   } = props
-  const [aiOpen, setAiOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
-  const shellRef = useRef<HTMLDivElement>(null)
-  const aiTriggerRef = useRef<HTMLElement | null>(null)
-
-  const openAi = () => {
-    aiTriggerRef.current = document.activeElement as HTMLElement | null
-    setAiOpen(true)
-  }
-  const closeAi = () => {
-    setAiOpen(false)
-    requestAnimationFrame(() => aiTriggerRef.current?.focus())
-  }
-
-  useEffect(() => {
-    if (aiOpen) shellRef.current?.setAttribute('inert', '')
-    else shellRef.current?.removeAttribute('inert')
-  }, [aiOpen])
 
   useEffect(() => {
     const close = (event: PointerEvent) => {
@@ -579,7 +525,7 @@ export function Workspace(props: Props) {
 
   return (
     <div className="business-app">
-      <div className="business-shell" ref={shellRef}>
+      <div className="business-shell">
         <BusinessSidebar />
         <main className="business-main">
           <header className="business-mobile-header">
@@ -600,27 +546,30 @@ export function Workspace(props: Props) {
             </Button>
             {profileOpen && <ProfileMenu profile={profile} onLogout={onLogout} />}
           </div>
-          <ContractorsPage currentPack={currentPack} onOpenAi={openAi} />
+          <ContractorsPage
+            aiPanel={(
+              <AiPanel
+                auth={auth}
+                sessions={sessions}
+                activeSession={activeSession}
+                messages={messages}
+                currentPack={currentPack}
+                loading={loading}
+                onCreateSession={onCreateSession}
+                onSelectSession={onSelectSession}
+                onDeleteSession={onDeleteSession}
+                onSessionUpdated={onSessionUpdated}
+                onChatCompleted={onChatCompleted}
+                hasMore={hasMore}
+                onLoadEarlier={onLoadEarlier}
+              />
+            )}
+          />
         </main>
         <Button className="support-stub" view="transparent" size={48} aria-label="Поддержка" disabled>
           <span>?</span>
         </Button>
       </div>
-      {aiOpen && (
-        <AiDialog
-          auth={auth}
-          sessions={sessions}
-          activeSession={activeSession}
-          messages={messages}
-          currentPack={currentPack}
-          loading={loading}
-          onClose={closeAi}
-          onCreateSession={onCreateSession}
-          onSelectSession={onSelectSession}
-          onSessionUpdated={onSessionUpdated}
-          onMessageAdded={onMessageAdded}
-        />
-      )}
     </div>
   )
 }

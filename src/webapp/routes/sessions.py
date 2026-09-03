@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from src.db.client import repository as client_repository
 from src.db.history import repository as history_repository
@@ -8,6 +8,7 @@ from src.db.models import Session as ChatSession
 from src.webapp.dependencies import CurrentUser, DbSession
 from src.webapp.schemas import (
     MessageCreateRequest,
+    MessagePage,
     MessageResponse,
     SessionCreateRequest,
     SessionResponse,
@@ -47,10 +48,24 @@ def update_session(
     return client_repository.update_session_role(session, chat, payload.role_preset)
 
 
-@router.get("/{session_id}/messages", response_model=list[MessageResponse])
-def list_messages(session_id: UUID, session: DbSession, user: CurrentUser):
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(session_id: UUID, session: DbSession, user: CurrentUser) -> None:
+    client_repository.delete_session(session, _owned_session(session, session_id, user))
+
+
+@router.get("/{session_id}/messages", response_model=MessagePage)
+def list_messages(
+    session_id: UUID,
+    session: DbSession,
+    user: CurrentUser,
+    limit: int = Query(50, ge=1, le=200),
+    before_id: int | None = Query(None, description="id самого раннего показанного сообщения"),
+) -> MessagePage:
     chat = _owned_session(session, session_id, user)
-    return history_repository.list_messages(session, chat.id)
+    items = history_repository.list_messages(session, chat.id, limit=limit, before_id=before_id)
+    total = history_repository.count_messages(session, chat.id)
+    has_more = bool(items) and history_repository.count_messages_before(session, chat.id, items[0].id) > 0
+    return MessagePage(items=items, total=total, has_more=has_more)
 
 
 @router.post("/{session_id}/messages", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
