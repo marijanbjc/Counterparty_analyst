@@ -60,6 +60,19 @@ def update_session_role(session: Session, chat: ChatSession, role_preset: str) -
     return chat
 
 
+def delete_session(session: Session, chat: ChatSession) -> None:
+    session.delete(chat)
+    session.flush()
+
+
+def set_session_title(session: Session, chat: ChatSession, title: str) -> ChatSession:
+    if not chat.title:
+        chat.title = title
+        session.flush()
+        session.refresh(chat)
+    return chat
+
+
 def record_request(session: Session, user_id: UUID, report_generated: bool = False) -> UserQuota:
     quota = get_quota(session, user_id)
     if quota is None:

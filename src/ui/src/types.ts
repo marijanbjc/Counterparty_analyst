@@ -83,6 +83,8 @@ export type FactPack = {
 }
 
 export type ChatResponse = {
+  session: Session
+  messages: Message[]
   answer: string
   verdict: string
   summary: string
@@ -100,4 +102,17 @@ export type Profile = {
   requests_used: number
   requests_limit: number
   reports_generated: number
+}
+
+export type MessagePage = {
+  items: Message[]
+  total: number
+  has_more: boolean
+}
+
+export type CompareResult = {
+  items: FactPack[]
+  count: number
+  missing: string[]
+  invalid: string[]
 }

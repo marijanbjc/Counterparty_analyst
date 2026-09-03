@@ -66,6 +66,12 @@ class MessageResponse(BaseModel):
     created_at: datetime
 
 
+class MessagePage(BaseModel):
+    items: list[MessageResponse]
+    total: int
+    has_more: bool
+
+
 class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     database: bool
@@ -85,6 +91,8 @@ class ChatResponse(BaseModel):
     analysis: str
     report: dict
     contractor: dict
+    session: SessionResponse
+    messages: list[MessageResponse]
     degraded: bool = True
     notice: str
 
@@ -92,6 +100,13 @@ class ChatResponse(BaseModel):
 class CompareRequest(BaseModel):
     inns: list[str] = Field(min_length=2, max_length=10)
     role_preset: RolePreset = DEFAULT_ROLE
+
+
+class CompareResponse(BaseModel):
+    items: list[dict]
+    count: int
+    missing: list[str] = Field(default_factory=list)
+    invalid: list[str] = Field(default_factory=list)
 
 
 class AnalysisSummaryResponse(BaseModel):

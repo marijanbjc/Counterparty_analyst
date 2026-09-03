@@ -1,7 +1,8 @@
 import type {
   ChatResponse,
+  CompareResult,
   FactPack,
-  Message,
+  MessagePage,
   Profile,
   RolePreset,
   Session,
@@ -16,6 +17,11 @@ export class ApiError extends Error {
     super(message)
     this.status = status
   }
+}
+
+function fileNameFrom(disposition: string | null, format: string): string {
+  const match = disposition?.match(/filename="([^"]+)"/)
+  return match ? match[1] : `report.${format}`
 }
 
 function errorText(payload: unknown): string {
@@ -83,8 +89,22 @@ export const api = {
     )
   },
 
-  messages(token: string, sessionId: string) {
-    return request<Message[]>(`/api/sessions/${sessionId}/messages`, {}, token)
+  async deleteSession(token: string, sessionId: string) {
+    const response = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) throw new ApiError('Не удалось удалить проверку.', response.status)
+  },
+
+  messages(token: string, sessionId: string, limit = 50, beforeId?: number) {
+    const query = new URLSearchParams({ limit: String(limit) })
+    if (beforeId) query.set('before_id', String(beforeId))
+    return request<MessagePage>(`/api/sessions/${sessionId}/messages?${query}`, {}, token)
+  },
+
+  sessionReport(token: string, sessionId: string) {
+    return request<{ report: FactPack }>(`/api/sessions/${sessionId}/report`, {}, token)
   },
 
   chat(token: string, sessionId: string, message: string, role_preset: RolePreset) {
@@ -107,14 +127,14 @@ export const api = {
   },
 
   compare(token: string, inns: string[], role_preset: RolePreset) {
-    return request<{ items: FactPack[]; count: number }>(
+    return request<CompareResult>(
       '/api/compare',
       { method: 'POST', body: JSON.stringify({ inns, role_preset }) },
       token,
     )
   },
 
-  async exportReport(token: string, sessionId: string, format: 'json' | 'md') {
+  async exportReport(token: string, sessionId: string, format: 'json' | 'md' = 'json') {
     const response = await fetch(
       `${API_URL}/api/sessions/${sessionId}/report/export?format=${format}`,
       { headers: { Authorization: `Bearer ${token}` } },
@@ -124,7 +144,7 @@ export const api = {
     const url = URL.createObjectURL(blob)
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `report.${format}`
+    anchor.download = fileNameFrom(response.headers.get('Content-Disposition'), format)
     anchor.click()
     URL.revokeObjectURL(url)
   },
