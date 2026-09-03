@@ -506,39 +506,6 @@ h3,
   font-size: 12px;
   line-height: 1.35;
 }
-.support-stub {
-  position: fixed;
-  right: 20px;
-  bottom: 18px;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border: 0;
-  border-radius: 50%;
-  color: white;
-  background: var(--ab-navy);
-  box-shadow: 0 7px 18px rgba(18, 27, 35, 0.28);
-  cursor: default;
-}
-
-.support-stub:disabled {
-  opacity: 1 !important;
-  color: white !important;
-  background: var(--ab-navy) !important;
-}
-
-.support-stub span {
-  display: grid;
-  place-items: center;
-  width: 21px;
-  height: 21px;
-  border: 2px solid white;
-  border-radius: 50%;
-  font-weight: 800;
-}
-
 /* Диалог проверки с ИИ */
 .ai-panel {
   display: grid;
@@ -630,7 +597,7 @@ h3,
   overflow-y: auto;
 }
 
-.ai-sessions > div button {
+.ai-sessions > div button:not(.session-delete) {
   justify-content: flex-start !important;
   border-radius: 6px !important;
 }
@@ -650,6 +617,12 @@ h3,
 .session-row.active {
   background: white;
   box-shadow: inset 2px 0 var(--ab-red);
+}
+
+.session-delete span {
+  display: grid;
+  place-items: center;
+  width: 100%;
 }
 
 .session-delete {
@@ -688,7 +661,7 @@ h3,
   font-size: 11px !important;
 }
 
-.ai-sessions > div button span {
+.ai-sessions > div button:not(.session-delete) span {
   display: grid;
   gap: 3px;
   width: 100%;
@@ -696,14 +669,14 @@ h3,
   text-align: left;
 }
 
-.ai-sessions > div button strong {
+.ai-sessions > div button:not(.session-delete) strong {
   overflow: hidden;
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.ai-sessions > div button small {
+.ai-sessions > div button:not(.session-delete) small {
   color: var(--ab-muted);
   font-size: 9px;
 }
