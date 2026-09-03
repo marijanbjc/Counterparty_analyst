@@ -51,3 +51,22 @@ def get_session(session: Session, session_id: UUID, user_id: UUID | None = None)
     if chat is None or (user_id is not None and chat.user_id != user_id):
         return None
     return chat
+
+
+def update_session_role(session: Session, chat: ChatSession, role_preset: str) -> ChatSession:
+    chat.role_preset = role_preset
+    session.flush()
+    session.refresh(chat)
+    return chat
+
+
+def record_request(session: Session, user_id: UUID, report_generated: bool = False) -> UserQuota:
+    quota = get_quota(session, user_id)
+    if quota is None:
+        quota = UserQuota(user_id=user_id)
+        session.add(quota)
+    quota.requests_used += 1
+    if report_generated:
+        quota.reports_generated += 1
+    session.flush()
+    return quota

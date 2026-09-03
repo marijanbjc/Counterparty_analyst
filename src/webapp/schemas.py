@@ -33,6 +33,10 @@ class SessionCreateRequest(BaseModel):
     title: str | None = None
 
 
+class SessionUpdateRequest(BaseModel):
+    role_preset: RolePreset
+
+
 class SessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -66,3 +70,48 @@ class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
     database: bool
     detail: str | None = None
+
+
+class ChatRequest(BaseModel):
+    session_id: UUID
+    message: str = Field(min_length=1)
+    role_preset: RolePreset | None = None
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    verdict: str
+    summary: str
+    analysis: str
+    report: dict
+    contractor: dict
+    degraded: bool = True
+    notice: str
+
+
+class CompareRequest(BaseModel):
+    inns: list[str] = Field(min_length=2, max_length=10)
+    role_preset: RolePreset = DEFAULT_ROLE
+
+
+class AnalysisSummaryResponse(BaseModel):
+    inn: str
+    short_name: str
+    analysis_type: str
+    verdict: str | None
+    summary: str | None
+    created_at: datetime
+
+
+class ReportUpdateRequest(BaseModel):
+    summary: str | None = None
+    analysis: str | None = None
+
+
+class ProfileResponse(BaseModel):
+    login: str
+    display_name: str | None
+    tariff: str
+    requests_used: int
+    requests_limit: int
+    reports_generated: int

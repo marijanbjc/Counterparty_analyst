@@ -1,6 +1,9 @@
+from pathlib import Path
+
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
 from src.config.settings import get_settings
@@ -29,4 +32,8 @@ def create_app() -> FastAPI:
 
     for router in ROUTERS:
         app.include_router(router)
+
+    ui_dist = Path(__file__).resolve().parents[1] / "ui" / "dist"
+    if ui_dist.exists():
+        app.mount("/", StaticFiles(directory=ui_dist, html=True), name="ui")
     return app

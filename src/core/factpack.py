@@ -117,6 +117,17 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
          "active": row.active}
         for row in repository.get_cofounders(session, inn)
     ]
+    pack["related_companies"] = [
+        {
+            "inn": row.related_inn,
+            "ogrn": row.related_ogrn,
+            "name": row.name,
+            "registered": aggregates.iso(row.registration_date),
+            "auth_person_name": row.auth_person_name,
+            "auth_person_position": row.auth_person_position,
+        }
+        for row in repository.get_related_companies(session, inn)
+    ]
     pack["missing_data"] = _missing(contractor, has_financials, financials["years"])
     if pack["profile"]["entity_kind"] == "sole_proprietor":
         pack["not_applicable"] = list(SOLE_PROPRIETOR_NOT_APPLICABLE)

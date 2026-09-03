@@ -11,6 +11,7 @@ from src.webapp.schemas import (
     MessageResponse,
     SessionCreateRequest,
     SessionResponse,
+    SessionUpdateRequest,
 )
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -33,6 +34,17 @@ def create_session(payload: SessionCreateRequest, session: DbSession, user: Curr
     return client_repository.create_session(
         session, user_id=user.id, role_preset=payload.role_preset, title=payload.title
     )
+
+
+@router.patch("/{session_id}", response_model=SessionResponse)
+def update_session(
+    session_id: UUID,
+    payload: SessionUpdateRequest,
+    session: DbSession,
+    user: CurrentUser,
+) -> ChatSession:
+    chat = _owned_session(session, session_id, user)
+    return client_repository.update_session_role(session, chat, payload.role_preset)
 
 
 @router.get("/{session_id}/messages", response_model=list[MessageResponse])
