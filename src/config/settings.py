@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     auth_login: str
     auth_password: str
     auth_token_ttl_hours: int
+    auth_token_secret: str
+
+    cors_origins: list[str]
 
     context_token_budget: int
     context_anchor_max_contractors: int

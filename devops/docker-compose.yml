@@ -18,26 +18,16 @@ services:
     build:
       context: ..
       dockerfile: devops/Dockerfile
-    command: python app.py serve
+    command: sh -c "python app.py load-data && python app.py serve"
     env_file: .env
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-contractors}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     ports:
       - "${APP_PORT:-8000}:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-
-  mcp:
-    build:
-      context: ..
-      dockerfile: devops/Dockerfile
-    command: python app.py mcp
-    env_file: .env
-    environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
     depends_on:
       db:
         condition: service_healthy
