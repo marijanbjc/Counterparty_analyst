@@ -30,6 +30,9 @@ cors_origins:
 # Потолок ОДНОГО запроса, не минутный лимит: TPM живёт в llm_tpm_limit.
 context_token_budget: 30000
 context_anchor_max_contractors: 5
+# Сколько реплик поднимаем из БД перед обрезкой по бюджету. Обрезает окно бюджет,
+# а не это число: ключ ограничивает объём выборки, а не длину контекста.
+context_history_max_messages: 40
 
 risk_active_execproc_revenue_share: 0.05
 risk_active_execproc_absolute: 10000000
@@ -58,3 +61,6 @@ tokens_factpack_full: 3798
 tokens_factpack_slim: 2029
 tokens_chars_per_token: 2.5
 tokens_safety_margin: 1.15
+# Резервируется лимитером вместе с промптом: record() пишет prompt + completion,
+# и без этого слагаемого окно занижается на треть (§6.1). Замерено 516–1218 за ход.
+tokens_expected_completion: 1000

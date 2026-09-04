@@ -55,6 +55,7 @@ class Settings(BaseSettings):
 
     context_token_budget: int
     context_anchor_max_contractors: int
+    context_history_max_messages: int
 
     risk_active_execproc_revenue_share: float
     risk_active_execproc_absolute: int
@@ -82,6 +83,7 @@ class Settings(BaseSettings):
     tokens_factpack_slim: int
     tokens_chars_per_token: float
     tokens_safety_margin: float
+    tokens_expected_completion: int
 
     @classmethod
     def settings_customise_sources(

@@ -82,6 +82,9 @@ class ChatRequest(BaseModel):
     session_id: UUID
     message: str = Field(min_length=1)
     role_preset: RolePreset | None = None
+    # Потолок наборов кнопок — свойство профиля (§8), здесь стоит абсолютный предел
+    # схемы: он ограничивает размер запроса, а не тариф.
+    buttons: list[str] = Field(default_factory=list, max_length=6)
 
 
 class ChatResponse(BaseModel):
