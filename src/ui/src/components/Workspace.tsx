@@ -35,7 +35,7 @@ type Props = {
   onSelectSession: (session: Session) => Promise<void>
   onDeleteSession: (session: Session) => Promise<void>
   onSessionUpdated: (session: Session) => void
-  onChatCompleted: (messages: Message[], pack: FactPack, session: Session) => void
+  onChatCompleted: (messages: Message[], pack: FactPack | null, session: Session) => void
   hasMore: boolean
   onLoadEarlier: () => Promise<void>
 }
@@ -321,7 +321,8 @@ function AiPanel({
       const response = await api.chat(auth.token, activeSession.id, content, role)
       onChatCompleted(response.messages, response.report, response.session)
       setMessage('')
-      setMobileView('report')
+      // На переспрос и сравнение отчёта нет — переключать мобильный вид не на что.
+      if (response.report) setMobileView('report')
     } catch (reason) {
       setError(reason instanceof ApiError ? reason.message : 'Сервис временно недоступен.')
     } finally {

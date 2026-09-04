@@ -85,16 +85,18 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    # Одна схема на все четыре сценария: у переспроса, отказа по квоте и сравнения
+    # разбора не существует, поэтому поля отчёта необязательны (§1.5).
     answer: str
-    verdict: str
-    summary: str
-    analysis: str
-    report: dict
-    contractor: dict
+    verdict: str | None = None
+    summary: str | None = None
+    analysis: str | None = None
+    report: dict | None = None
+    contractor: dict | None = None
     session: SessionResponse
     messages: list[MessageResponse]
-    degraded: bool = True
-    notice: str
+    degraded: bool = False
+    notice: str | None = None
 
 
 class CompareRequest(BaseModel):

@@ -130,9 +130,10 @@ function App() {
     setActiveSession(updated)
   }
 
-  const applyChat = (saved: Message[], pack: FactPack, session: Session) => {
+  const applyChat = (saved: Message[], pack: FactPack | null, session: Session) => {
     setMessages((items) => [...items, ...saved])
-    setCurrentPack(pack)
+    // Переспрос и сравнение отчёта не приносят — ранее открытый оставляем на месте.
+    if (pack) setCurrentPack(pack)
     updateSession(session)
   }
 

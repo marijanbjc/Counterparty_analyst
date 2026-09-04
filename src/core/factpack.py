@@ -2,12 +2,16 @@ from sqlalchemy.orm import Session
 
 from src.core import aggregates, discrepancy
 from src.core import inn as inn_module
+from src.core import legal_status
 from src.core.roles import chapters_for
 from src.db.contragents import repository
 from src.db.models import Contractor
 
-COMPACT = "compact"
+SLIM = "slim"
 FULL = "full"
+MODES = (SLIM, FULL)
+
+TOP_EXECPROC = 5
 
 OPTIONAL_PROFILE_FIELDS = ("staff", "email", "website", "phone", "address", "kpp", "company_size")
 SOLE_PROPRIETOR_NOT_APPLICABLE = ("kpp", "cofounders", "share_capital")
@@ -33,21 +37,27 @@ def _verdict_basis(contractor: Contractor) -> dict:
     }
 
 
-def _factors(contractor: Contractor, session: Session, chapters: tuple[str, ...], with_names: bool) -> dict:
+def _factors(contractor: Contractor, session: Session, chapters: tuple[str, ...], with_positive: bool) -> dict:
     rows = repository.get_factors(session, contractor.inn, chapters=chapters)
     result: dict = {"negative": [], "positive": []}
     for row in rows:
-        item = {"code": row.code, "chapter": row.chapter}
-        if with_names:
-            item["name"] = row.name
-        result[row.polarity].append(item)
+        result[row.polarity].append({"code": row.code, "chapter": row.chapter, "name": row.name})
     result["negative_shown"] = len(result["negative"])
+    if not with_positive:
+        # Позитивные факторы не влияют ни на вердикт, ни на расхождения детектора —
+        # это самая дорогая часть пакета, которую можно снять без потери оценки (§8.3).
+        result.pop("positive")
     result["negative_total"] = contractor.negative_factors_count
     result["filtered_by_role"] = bool(chapters)
     return result
 
 
 def build(session: Session, inn: str, mode: str = FULL, role: str | None = None) -> dict | None:
+    if mode not in MODES:
+        # Молчаливый возврат FULL на незнакомом режиме прятал бы перерасход токенов
+        # базового профиля до самого счёта поставщика.
+        raise ValueError(f"Неизвестный режим факт-пакета: {mode!r}. Допустимые: {', '.join(MODES)}.")
+
     contractor = repository.get_contractor(session, inn)
     if contractor is None:
         return None
@@ -64,6 +74,10 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
         "short_name": contractor.short_name,
         "as_of": aggregates.iso(contractor.report_date),
         "verdict_basis": _verdict_basis(contractor),
+        # profile.status почти всегда CURRENT и сам по себе ничего не значит: банкротство
+        # видно только в status_reason. Правовой статус одинаков в обоих режимах (§8.2)
+        # и служит входом эскалации вердикта (§5.3).
+        "legal_status": legal_status.build(contractor),
         "profile": {
             "status": contractor.status,
             "registered": aggregates.iso(contractor.registration_date),
@@ -75,16 +89,17 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
         },
         "financials": {**financials, "latest_revenue": revenue, "coefficients": contractor.coefficients},
         "arbitration": aggregates.arbitration(contractor, repository.get_arbitration_years(session, inn)),
-        "execution_proceedings": aggregates.execproc_summary(contractor),
-        "risk_factors": _factors(contractor, session, chapters, with_names=mode == FULL),
+        # Действующие взыскания и история различаются в обоих режимах (§9, правило 6),
+        # поэтому разбивка по годам и топ активных производств не сокращаются.
+        "execution_proceedings": aggregates.execution_proceedings(
+            contractor,
+            repository.get_top_execproc(session, inn, active_only=True, limit=TOP_EXECPROC),
+            repository.get_execproc_by_year(session, inn),
+        ),
+        "risk_factors": _factors(contractor, session, chapters, with_positive=mode == FULL),
         "discrepancies": discrepancy.detect(contractor, revenue, has_financials),
         "related_companies_count": repository.count_related(session, inn),
     }
-
-    if mode == COMPACT:
-        pack["arbitration"].pop("by_year", None)
-        pack["missing_data"] = _missing(contractor, has_financials, financials["years"])
-        return pack
 
     pack["full_name"] = contractor.full_name
     pack["profile"].update(
@@ -107,27 +122,24 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
         }
     )
     pack["financials"]["balance"] = aggregates.balance(reports)
-    pack["execution_proceedings"] = aggregates.execution_proceedings(
-        contractor,
-        repository.get_top_execproc(session, inn, active_only=True, limit=5),
-        repository.get_execproc_by_year(session, inn),
-    )
     pack["cofounders"] = [
         {"name": row.name, "inn": row.founder_inn, "share": float(row.share) if row.share else None,
          "active": row.active}
         for row in repository.get_cofounders(session, inn)
     ]
-    pack["related_companies"] = [
-        {
-            "inn": row.related_inn,
-            "ogrn": row.related_ogrn,
-            "name": row.name,
-            "registered": aggregates.iso(row.registration_date),
-            "auth_person_name": row.auth_person_name,
-            "auth_person_position": row.auth_person_position,
-        }
-        for row in repository.get_related_companies(session, inn)
-    ]
+    if mode == FULL:
+        # Связанные компании — вторая по весу часть пакета и тоже вне оценки риска (§8.3).
+        pack["related_companies"] = [
+            {
+                "inn": row.related_inn,
+                "ogrn": row.related_ogrn,
+                "name": row.name,
+                "registered": aggregates.iso(row.registration_date),
+                "auth_person_name": row.auth_person_name,
+                "auth_person_position": row.auth_person_position,
+            }
+            for row in repository.get_related_companies(session, inn)
+        ]
     pack["missing_data"] = _missing(contractor, has_financials, financials["years"])
     if pack["profile"]["entity_kind"] == "sole_proprietor":
         pack["not_applicable"] = list(SOLE_PROPRIETOR_NOT_APPLICABLE)
@@ -135,5 +147,5 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
 
 
 def build_many(session: Session, inns: list[str], role: str | None = None) -> list[dict]:
-    packs = [build(session, inn, mode="compact", role=role) for inn in inns]
+    packs = [build(session, inn, mode=SLIM, role=role) for inn in inns]
     return [pack for pack in packs if pack]
