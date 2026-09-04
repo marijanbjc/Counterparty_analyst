@@ -1,15 +1,21 @@
 1. Положить в docs/internal_files файл contractors_audit.snapshot.json
-2. Скопировать .env.example в .env и заполнить POSTGRES_* и AUTH_PASSWORD.
 
 # local развертывание
 pip install -r requirements.txt
 
+## Поднимаем БД
+docker compose --project-directory . -f devops/docker-compose.yml up -d db
+python app.py load-data
+
 ## Поднимаем backend (1й терминал)
-app.py load-data
-app.py serve
+python app.py serve
 Доступ на: http://0.0.0.0:8000
 
 ## Поднимаем frontend (2й терминал)
 npm install
 npm run dev -- --host 0.0.0.0
 Доступ на: http://localhost:5173/
+
+## MCP-сервер (отдельный процесс)
+python app.py mcp
+Каталог инструментов и правила набора — docs/mcp_architecture.md

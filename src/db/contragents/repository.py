@@ -120,6 +120,23 @@ def count_search(
     return session.scalar(select(func.count()).select_from(query.subquery())) or 0
 
 
+def existing_inns(session: Session, inns: list[str]) -> set[str]:
+    if not inns:
+        return set()
+    return set(session.scalars(select(Contractor.inn).where(Contractor.inn.in_(inns))))
+
+
+def similar_contractors(
+    session: Session, inn: str, division: str, region: str | None, limit: int
+) -> list[Contractor]:
+    query = select(Contractor).where(
+        Contractor.inn != inn, Contractor.main_okved_code.startswith(f"{division}.")
+    )
+    if region:
+        query = query.where(Contractor.region == region)
+    return list(session.scalars(query.order_by(Contractor.short_name).limit(limit)))
+
+
 def list_regions(session: Session) -> list[str]:
     rows = session.scalars(
         select(Contractor.region).where(Contractor.region.isnot(None)).distinct().order_by(Contractor.region)

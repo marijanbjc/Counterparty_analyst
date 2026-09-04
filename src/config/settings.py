@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     risk_many_execproc_threshold: int
 
     zsk_mask_yellow_red: bool
+    llm_validator_enabled: bool
 
     @classmethod
     def settings_customise_sources(

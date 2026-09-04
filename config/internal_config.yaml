@@ -35,3 +35,4 @@ risk_negative_factors_threshold: 3
 risk_many_execproc_threshold: 100
 
 zsk_mask_yellow_red: false
+llm_validator_enabled: false
