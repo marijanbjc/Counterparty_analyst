@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
+from src.agent.profiles import profile_for
 from src.core import factpack
 from src.core import inn as inn_module
 from src.db.client import repository as client_repository
@@ -12,12 +13,15 @@ router = APIRouter(prefix="/api", tags=["operations"])
 @router.get("/me", response_model=ProfileResponse)
 def profile(session: DbSession, user: CurrentUser) -> ProfileResponse:
     quota = client_repository.get_quota(session, user.id)
+    execution = profile_for(user.tariff)
     return ProfileResponse(
         login=user.login,
         display_name=user.display_name,
-        tariff="Демо",
+        tariff=user.tariff,
+        tariff_label=execution.label,
+        profile=execution.name,
         requests_used=quota.requests_used if quota else 0,
-        requests_limit=quota.requests_limit if quota else 100,
+        requests_limit=quota.requests_limit if quota else execution.requests_limit,
         reports_generated=quota.reports_generated if quota else 0,
     )
 

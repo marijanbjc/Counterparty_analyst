@@ -127,6 +127,8 @@ class ProfileResponse(BaseModel):
     login: str
     display_name: str | None
     tariff: str
+    tariff_label: str
+    profile: str
     requests_used: int
     requests_limit: int
     reports_generated: int

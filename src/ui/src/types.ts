@@ -1,4 +1,4 @@
-export type RolePreset = 'finance' | 'legal' | 'security' | 'general'
+export type RolePreset = 'finance' | 'legal' | 'security' | 'activity' | 'general'
 
 export type AuthState = {
   token: string
@@ -99,6 +99,8 @@ export type Profile = {
   login: string
   display_name: string | null
   tariff: string
+  tariff_label: string
+  profile: string
   requests_used: number
   requests_limit: number
   reports_generated: number

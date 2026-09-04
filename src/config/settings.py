@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     llm_api_key: str
     llm_timeout_seconds: int
     llm_max_retries: int
+    llm_tpm_limit: int
 
     auth_login: str
     auth_password: str
@@ -63,6 +64,24 @@ class Settings(BaseSettings):
 
     zsk_mask_yellow_red: bool
     llm_validator_enabled: bool
+
+    tariff_default: str
+    tariff_free_requests_limit: int
+    tariff_paid_requests_limit: int
+    tariff_free_max_buttons: int
+    tariff_paid_max_buttons: int
+    tariff_free_max_compare: int
+    tariff_paid_max_compare: int
+    context_budget_share: float
+
+    tokens_system_prompt: int
+    tokens_tools_core: int
+    tokens_tools_role: int
+    tokens_tools_all: int
+    tokens_factpack_full: int
+    tokens_factpack_slim: int
+    tokens_chars_per_token: float
+    tokens_safety_margin: float
 
     @classmethod
     def settings_customise_sources(

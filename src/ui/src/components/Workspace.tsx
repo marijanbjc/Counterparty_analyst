@@ -19,6 +19,7 @@ const ROLES: Array<{ value: RolePreset; label: string }> = [
   { value: 'finance', label: 'Финансы' },
   { value: 'legal', label: 'Юридический' },
   { value: 'security', label: 'Безопасность' },
+  { value: 'activity', label: 'Деятельность' },
 ]
 
 type Props = {
@@ -151,7 +152,7 @@ function ProfileMenu({ profile, onLogout }: { profile: Profile | null; onLogout:
         <span className="avatar">{profile?.login.slice(0, 1).toUpperCase() || 'A'}</span>
         <div>
           <strong>{profile?.display_name || profile?.login || 'Пользователь'}</strong>
-          <small>Тариф «{profile?.tariff || 'Демо'}»</small>
+          <small>Тариф «{profile?.tariff_label || 'Бесплатный'}»</small>
         </div>
       </div>
       <div className="quota">
