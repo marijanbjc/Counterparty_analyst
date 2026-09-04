@@ -54,6 +54,18 @@ typography:
     fontWeight: 700
     lineHeight: 1.15
     letterSpacing: "-0.04em"
+  display-mobile:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "46px"
+    fontWeight: 700
+    lineHeight: 1.0
+    letterSpacing: "-0.055em"
+  headline-mobile:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "29px"
+    fontWeight: 700
+    lineHeight: 1.15
+    letterSpacing: "-0.04em"
   title:
     fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
     fontSize: "21px"
@@ -227,8 +239,10 @@ AI-проверка выглядит не как отдельный продук
 **Character:** Onest делает заголовки плотными и узнаваемыми, а Segoe UI Variable сохраняет нейтральную банковскую читаемость в навигации, таблицах, чате и досье.
 
 ### Hierarchy
-- **Display** (700, clamp 52–96px, -0.055em): единственное место — обложка входа; на mobile 46px. Внутри рабочего интерфейса не применяется.
-- **Headline** (700, 34px, 1.1): заголовок раздела; на mobile уменьшается до 29px.
+- **Display** (700, clamp 52–96px, -0.055em): единственное место — обложка входа. Внутри рабочего интерфейса не применяется.
+- **Display-mobile** (700, 46px): та же обложка на узком экране.
+- **Headline** (700, 34px, 1.1): заголовок раздела.
+- **Headline-mobile** (700, 29px): он же на узком экране.
 - **Headline-sm** (700, 30px): приветствие в чате — тот же ярус, но внутри панели, а не на странице.
 - **Title** (700, 21px, 1.2): заголовки поиска, отчётов и компании в досье.
 - **Lead** (400, 19px, 1.45): вводный абзац обложки входа.
