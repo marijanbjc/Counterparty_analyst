@@ -25,7 +25,9 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
 
 def cmd_mcp(args: argparse.Namespace) -> None:
-    raise SystemExit("Команда mcp появится на этапе 2 (MCP-сервер).")
+    from src.mcp.server import run
+
+    run()
 
 
 def main() -> int:
