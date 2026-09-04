@@ -95,5 +95,11 @@ def build_server() -> FastMCP:
     return mcp
 
 
-def run() -> None:
-    build_server().run()
+def run(http: bool = False, host: str = "127.0.0.1", port: int = 8765) -> None:
+    """stdio по умолчанию — так сервер запускает MCP-клиент.
+    http нужен, чтобы посмотреть каталог инструментов вручную, без клиента."""
+    server = build_server()
+    if http:
+        server.run(transport="http", host=host, port=port)
+    else:
+        server.run()
