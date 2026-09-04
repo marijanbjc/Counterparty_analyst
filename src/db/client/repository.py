@@ -15,14 +15,20 @@ def get_user_by_login(session: Session, login: str) -> User | None:
     return session.scalar(select(User).where(User.login == login))
 
 
-def ensure_user(session: Session, login: str, display_name: str | None = None) -> User:
+def ensure_user(
+    session: Session,
+    login: str,
+    tariff: str,
+    requests_limit: int,
+    display_name: str | None = None,
+) -> User:
     user = get_user_by_login(session, login)
     if user is not None:
         return user
-    user = User(login=login, display_name=display_name or login)
+    user = User(login=login, display_name=display_name or login, tariff=tariff)
     session.add(user)
     session.flush()
-    session.add(UserQuota(user_id=user.id))
+    session.add(UserQuota(user_id=user.id, requests_limit=requests_limit))
     session.flush()
     return user
 

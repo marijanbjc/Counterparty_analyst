@@ -2,6 +2,8 @@ ROLE_CHAPTERS = {
     "finance": ("finance",),
     "legal": ("arbitr", "execproc"),
     "security": ("reestrs", "manager"),
+    "activity": ("okved", "license"),
+    # Не область, а её отсутствие: фильтр по главам не накладывается.
     "general": (),
 }
 

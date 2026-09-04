@@ -5,12 +5,38 @@
   --ab-navy: #202a34;
   --ab-navy-soft: #303b46;
   --ab-muted: #687482;
+  /* приглушённый на тёмной навигации: --ab-muted на ней не читается */
+  --ab-muted-inverse: #aeb7bf;
+  --ab-info: #1687f8;
   --ab-line: #dfe3e7;
   --ab-bg: #f3f4f5;
   --ab-surface: #ffffff;
   --ab-control: #eef0f2;
   --ab-green: #138a50;
   --ab-warning: #ad6700;
+  /* Тональные рампы семантики: тёмный тон для текста, светлый для подложки.
+     Светофор надёжности — ядро продукта, его цвета не декоративны. */
+  --ab-green-ink: #08783f;
+  --ab-green-bg: #dcf4e5;
+  --ab-warning-ink: #935800;
+  --ab-warning-bg: #ffefce;
+  --ab-warning-ink-deep: #70480b;
+  --ab-warning-bg-soft: #fff5df;
+  --ab-danger-ink: #aa2018;
+  --ab-danger-bg: #ffe3e1;
+  --ab-error-ink: #9e1710;
+  --ab-error-bg: #fff0ef;
+  --ab-neutral-ink: #596572;
+  --ab-neutral-bg: #e9ecef;
+  /* Приглушённые тона на тёмной навигации: --ab-muted на ней не читается. */
+  --ab-on-navy: #c8cfd5;
+  --ab-on-navy-soft: #9aa4ad;
+  --ab-on-navy-dim: #8f9aa4;
+  --ab-on-navy-text: #c5cbd0;
+  --ab-navy-line: #44515d;
+  /* Подложки на полтона светлее canvas: разделяют панели без линии. */
+  --ab-surface-tint: #f7f8f8;
+  --ab-scrollbar: #aab1b8;
   font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
   color: var(--ab-ink);
   background: var(--ab-bg);
@@ -56,7 +82,7 @@ textarea:focus-visible,
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 9px;
-  background: #aab1b8;
+  background: var(--ab-scrollbar);
   background-clip: padding-box;
 }
 
@@ -80,9 +106,17 @@ h3,
 .form-error,
 .composer-error {
   padding: 11px 13px;
-  border-radius: 7px;
-  color: #9e1710;
-  background: #fff0ef;
+  border-radius: 9px;
+  color: var(--ab-error-ink);
+  background: var(--ab-error-bg);
+  font-size: 13px;
+}
+
+.composer-notice {
+  padding: 10px 13px;
+  border-radius: 9px;
+  color: var(--ab-text);
+  background: var(--ab-control);
   font-size: 13px;
 }
 
@@ -110,7 +144,7 @@ h3,
   right: -14vw;
   width: 54vw;
   height: 54vw;
-  border: 1px solid #44515d;
+  border: 1px solid var(--ab-navy-line);
   border-radius: 50%;
   content: "";
 }
@@ -146,7 +180,7 @@ h3,
   position: relative;
   max-width: 560px;
   margin: 32px 0 0;
-  color: #c5cbd0;
+  color: var(--ab-on-navy-text);
   font-size: 19px;
   line-height: 1.5;
 }
@@ -158,7 +192,7 @@ h3,
   display: flex;
   flex-wrap: wrap;
   gap: 20px;
-  color: #9aa4ad;
+  color: var(--ab-on-navy-soft);
   font-size: 12px;
 }
 
@@ -245,7 +279,7 @@ h3,
 
 .business-nav-item {
   justify-content: flex-start !important;
-  color: #c8cfd5 !important;
+  color: var(--ab-on-navy) !important;
   border-radius: 5px !important;
   font-size: 12px !important;
 }
@@ -269,7 +303,7 @@ h3,
   display: flex;
   justify-content: space-between;
   margin: 22px 9px 9px;
-  color: #aeb7bf;
+  color: var(--ab-muted-inverse);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -278,10 +312,10 @@ h3,
 
 .nav-badge {
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: 4px;
   color: white;
-  background: #1687f8;
-  font-size: 7px;
+  background: var(--ab-info);
+  font-size: 8px;
   font-weight: 800;
 }
 
@@ -300,7 +334,7 @@ h3,
 
 .business-sidebar > small {
   padding: 0 7px;
-  color: #8f9aa4;
+  color: var(--ab-on-navy-dim);
   font-size: 9px;
 }
 
@@ -482,7 +516,7 @@ h3,
   margin-bottom: 15px;
   border: 1px solid var(--ab-line);
   border-radius: 9px;
-  background: #f7f8f8;
+  background: var(--ab-surface-tint);
 }
 
 .service-card-ai .service-icon {
@@ -539,7 +573,7 @@ h3,
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 8px;
+  border-radius: 9px;
   color: white;
   background: var(--ab-red);
 }
@@ -579,7 +613,7 @@ h3,
   min-width: 0;
   padding: 15px 12px;
   border-right: 1px solid var(--ab-line);
-  background: #f6f7f8;
+  background: var(--ab-surface-tint);
 }
 
 .ai-sessions > p {
@@ -599,14 +633,14 @@ h3,
 
 .ai-sessions > div button:not(.session-delete) {
   justify-content: flex-start !important;
-  border-radius: 6px !important;
+  border-radius: 5px !important;
 }
 
 .session-row {
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: 6px;
+  border-radius: 5px;
 }
 
 /* отступ только у кнопки сессии: под корзину, иначе название заезжает на неё */
@@ -650,7 +684,7 @@ h3,
   display: flex;
   gap: 3px;
   padding: 2px;
-  border-radius: 6px;
+  border-radius: 5px;
   background: white;
   box-shadow: 0 2px 10px rgba(16, 22, 28, 0.18);
 }
@@ -702,7 +736,7 @@ h3,
   height: 46px;
   padding: 0;
   border: 1px solid var(--ab-line);
-  border-radius: 7px;
+  border-radius: 9px;
   color: var(--ab-muted);
   background: white;
   box-shadow: 0 2px 8px rgba(16, 22, 28, 0.1);
@@ -736,31 +770,37 @@ h3,
   overflow-y: auto;
 }
 
-/* колонка чтения: ширину держит обёртка, чтобы у реплик осталась своя */
+/* колонка чтения: ширину держит обёртка, чтобы у реплик осталась своя.
+   Ширину анимирует max-inline-size, а не width: у флекс-колонки это
+   не вызывает пересчёта раскладки всей ленты сообщений на каждом кадре. */
 .ai-thread {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 22px;
-  width: min(100%, 760px);
+  width: 100%;
+  max-inline-size: 760px;
   margin-inline: auto;
-  transition: width 280ms cubic-bezier(.16, 1, .3, 1);
+  transition: max-inline-size 280ms cubic-bezier(.16, 1, .3, 1);
 }
 
 .ai-composer > div:last-of-type,
 .ai-composer > small,
-.composer-error {
-  width: min(100%, 760px);
+.composer-error,
+.composer-notice {
+  width: 100%;
+  max-inline-size: 760px;
   margin-inline: auto;
-  transition: width 280ms cubic-bezier(.16, 1, .3, 1);
+  transition: max-inline-size 280ms cubic-bezier(.16, 1, .3, 1);
 }
 
 /* отчёт скрыт — диалогу отдаётся вся ширина, иначе текст висит посреди пустого окна */
 .report-collapsed .ai-thread,
 .report-collapsed .ai-composer > div:last-of-type,
 .report-collapsed .ai-composer > small,
-.report-collapsed .composer-error {
-  width: 100%;
+.report-collapsed .composer-error,
+.report-collapsed .composer-notice {
+  max-inline-size: 100%;
 }
 
 .loading-state {
@@ -847,6 +887,15 @@ h3,
   border-left: 1px solid var(--ab-red);
 }
 
+.ai-message-streaming p {
+  min-height: 1.2em;
+}
+
+.ai-stage {
+  color: var(--ab-muted) !important;
+  font-weight: 600;
+}
+
 .ai-message small {
   display: block;
   margin-top: 9px;
@@ -884,7 +933,8 @@ h3,
   z-index: 30;
   display: grid;
   gap: 2px;
-  width: 190px;
+  /* два столбца наборов не помещались в прежние 190px */
+  width: 248px;
   padding: 10px;
   border: 1px solid var(--ab-line);
   border-radius: 9px;
@@ -908,6 +958,61 @@ h3,
 .settings-popover button span {
   width: 100%;
   text-align: left;
+}
+
+/* Счётчик живёт на самой шестерёнке: поповер закрыт почти всегда,
+   и отмеченные наборы иначе ничем себя не выдают (§7.4). */
+.settings-count {
+  position: absolute;
+  top: 2px;
+  right: -2px;
+  display: grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--ab-red);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.settings-popover > p.settings-divider {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--ab-line);
+}
+
+.settings-sets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
+  /* только transform и opacity — свойства раскладки при появлении не трогаем */
+  animation: settings-sets-in 160ms cubic-bezier(.16, 1, .3, 1);
+}
+
+@keyframes settings-sets-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.settings-sets button {
+  padding: 0 6px !important;
+}
+
+.settings-sets button span {
+  font-size: 12px;
+  line-height: 1.15;
+  white-space: normal;
+}
+
+.settings-hint {
+  margin: 8px 6px 0;
+  color: var(--ab-muted);
+  font-size: 10px;
+  line-height: 1.3;
 }
 
 .ai-composer > small {
@@ -985,10 +1090,10 @@ h3,
   text-transform: uppercase;
 }
 
-.reliability-good { color: #08783f; background: #dcf4e5; }
-.reliability-warning { color: #935800; background: #ffefce; }
-.reliability-danger { color: #aa2018; background: #ffe3e1; }
-.reliability-neutral { color: #596572; background: #e9ecef; }
+.reliability-good { color: var(--ab-green-ink); background: var(--ab-green-bg); }
+.reliability-warning { color: var(--ab-warning-ink); background: var(--ab-warning-bg); }
+.reliability-danger { color: var(--ab-danger-ink); background: var(--ab-danger-bg); }
+.reliability-neutral { color: var(--ab-neutral-ink); background: var(--ab-neutral-bg); }
 
 .ai-dossier header h3 {
   margin: 15px 0 5px;
@@ -1013,8 +1118,8 @@ h3,
 
 .report-warning {
   padding: 17px 22px;
-  color: #70480b;
-  background: #fff5df;
+  color: var(--ab-warning-ink-deep);
+  background: var(--ab-warning-bg-soft);
 }
 
 .report-warning strong {
@@ -1121,7 +1226,7 @@ h3,
 
   .business-mobile-header .alfa-wordmark {
     margin: 0;
-    font-size: 17px;
+    font-size: 18px;
   }
 
   .business-profile {
@@ -1181,7 +1286,7 @@ h3,
 
   .login-story > p {
     margin-top: 20px;
-    font-size: 15px;
+    font-size: 14px;
   }
 
   .login-proof {
@@ -1219,7 +1324,7 @@ h3,
   }
 
   .ai-panel-header h2 {
-    font-size: 16px;
+    font-size: 14px;
   }
 
   .ai-header-actions > button:last-child {

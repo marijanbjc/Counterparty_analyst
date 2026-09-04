@@ -53,3 +53,23 @@ def last_messages(session: Session, session_id: UUID, limit: int) -> list[Messag
         .limit(limit)
     )
     return list(reversed(list(session.scalars(query))))
+
+
+def allowed_inns(session: Session, session_id: UUID) -> set[str]:
+    """ИНН, которые инструменты уже открыли внутри этой сессии.
+
+    Белый список хранится вместе с ответом ассистента: это состояние диалога,
+    а не глобальное свойство контрагента. Выбираем только JSON meta, не тексты
+    сообщений, чтобы случайное число из формулировки не стало разрешением.
+    """
+    query = select(Message.meta).where(
+        Message.session_id == session_id,
+        Message.role == "assistant",
+        Message.meta.is_not(None),
+    )
+    result: set[str] = set()
+    for meta in session.scalars(query):
+        if not isinstance(meta, dict):
+            continue
+        result.update(value for value in meta.get("_allowed_inns") or () if isinstance(value, str))
+    return result

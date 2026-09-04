@@ -7,6 +7,7 @@ import { api, ApiError } from '../api'
 import { date, entityKind, money, number, riskName, riskTone } from '../format'
 import type {
   AuthState,
+  DataSet,
   FactPack,
   Message,
   Profile,
@@ -19,7 +20,45 @@ const ROLES: Array<{ value: RolePreset; label: string }> = [
   { value: 'finance', label: 'Финансы' },
   { value: 'legal', label: 'Юридический' },
   { value: 'security', label: 'Безопасность' },
+  { value: 'activity', label: 'Деятельность' },
 ]
+
+const DATASETS: Array<{ value: DataSet; label: string }> = [
+  { value: 'finance', label: 'Финансы' },
+  { value: 'legal', label: 'Юридический' },
+  { value: 'security', label: 'Безопасность' },
+  { value: 'activity', label: 'Деятельность' },
+  { value: 'followups', label: 'Что запросить' },
+  { value: 'charts', label: 'Графики' },
+]
+
+// Потолок наборов за ход — ExecutionProfile.max_buttons на бэкенде (§8.4).
+const MAX_DATASETS: Record<string, number> = { basic: 2, extended: 6 }
+
+const STAGE_LABELS: Record<string, string> = {
+  prefetch: 'Собираю данные',
+  verdict: 'Считаю вердикт',
+  context: 'Собираю контекст',
+  waiting_limit: 'Ожидаю окно модели',
+  llm: 'Пишу ответ',
+  tools: 'Уточняю по данным',
+  repair: 'Проверяю ответ',
+  persist: 'Сохраняю',
+}
+
+const FOCUSED_STAGE_LABELS: Record<string, string> = {
+  finance: 'Углубляю финансовый разбор',
+  legal: 'Углубляю юридический разбор',
+  security: 'Углубляю проверку безопасности',
+  activity: 'Углубляю разбор деятельности',
+}
+
+function stageLabel(stage: string) {
+  if (stage.startsWith('focused_')) {
+    return FOCUSED_STAGE_LABELS[stage.slice('focused_'.length)] || 'Углубляю разбор'
+  }
+  return STAGE_LABELS[stage] || stage
+}
 
 type Props = {
   auth: AuthState
@@ -34,7 +73,7 @@ type Props = {
   onSelectSession: (session: Session) => Promise<void>
   onDeleteSession: (session: Session) => Promise<void>
   onSessionUpdated: (session: Session) => void
-  onChatCompleted: (messages: Message[], pack: FactPack, session: Session) => void
+  onChatCompleted: (messages: Message[], pack: FactPack | null, session: Session) => void
   hasMore: boolean
   onLoadEarlier: () => Promise<void>
 }
@@ -151,7 +190,7 @@ function ProfileMenu({ profile, onLogout }: { profile: Profile | null; onLogout:
         <span className="avatar">{profile?.login.slice(0, 1).toUpperCase() || 'A'}</span>
         <div>
           <strong>{profile?.display_name || profile?.login || 'Пользователь'}</strong>
-          <small>Тариф «{profile?.tariff || 'Демо'}»</small>
+          <small>Тариф «{profile?.tariff_label || 'Бесплатный'}»</small>
         </div>
       </div>
       <div className="quota">
@@ -256,6 +295,7 @@ function Dossier({ pack }: { pack: FactPack | null }) {
 
 function AiPanel({
   auth,
+  profile,
   sessions,
   activeSession,
   messages,
@@ -268,16 +308,23 @@ function AiPanel({
   onChatCompleted,
   hasMore,
   onLoadEarlier,
-}: Omit<Props, 'profile' | 'onLogout'>) {
+}: Omit<Props, 'onLogout'>) {
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [mobileView, setMobileView] = useState<'chat' | 'report'>('chat')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [datasets, setDatasets] = useState<DataSet[]>([])
   const [reportOpen, setReportOpen] = useState(true)
+  const [draftUser, setDraftUser] = useState<string | null>(null)
+  const [draftAnswer, setDraftAnswer] = useState('')
+  const [stage, setStage] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
   const role = activeSession?.role_preset || 'general'
+  const maxDatasets = MAX_DATASETS[profile?.profile ?? ''] ?? MAX_DATASETS.basic
   const orderedMessages = useMemo(
     () => messages.filter((item) => item.role === 'user' || item.role === 'assistant'),
     [messages],
@@ -291,6 +338,13 @@ function AiPanel({
     document.addEventListener('pointerdown', close)
     return () => document.removeEventListener('pointerdown', close)
   }, [settingsOpen])
+
+  useEffect(() => () => abortRef.current?.abort(), [])
+
+  useEffect(() => {
+    setError(null)
+    setNotice(null)
+  }, [activeSession?.id])
 
   const removeSession = async (session: Session) => {
     setConfirmDelete(null)
@@ -310,23 +364,72 @@ function AiPanel({
     }
   }
 
+  const toggleDataset = (value: DataSet) => {
+    setDatasets((items) => (
+      items.includes(value)
+        ? items.filter((item) => item !== value)
+        : items.length < maxDatasets ? [...items, value] : items
+    ))
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!activeSession || !message.trim()) return
+    if (!activeSession || !message.trim() || sending) return
+    const content = message.trim()
+    const requestSessionId = activeSession.id
+    const controller = new AbortController()
+    abortRef.current = controller
     setSending(true)
     setError(null)
+    setNotice(null)
+    setDraftUser(content)
+    setDraftAnswer('')
+    setStage(null)
+    setMessage('')
     try {
-      const content = message.trim()
-      const response = await api.chat(auth.token, activeSession.id, content, role)
-      onChatCompleted(response.messages, response.report, response.session)
-      setMessage('')
-      setMobileView('report')
+      await api.chatStream(
+        auth.token,
+        activeSession.id,
+        content,
+        role,
+        datasets,
+        {
+          onStage: (name) => setStage(name),
+          onDelta: (text) => setDraftAnswer((value) => value + text),
+          onDone: (response) => {
+            setDraftUser(null)
+            setDraftAnswer('')
+            setStage(null)
+            if (response.session.id !== requestSessionId) return
+            onChatCompleted(response.messages, response.report, response.session)
+            setNotice(response.notice)
+            setDatasets([])
+            if (response.report) setMobileView('report')
+          },
+          onError: (detail, degraded) => {
+            if (!degraded) setError(detail)
+          },
+        },
+        controller.signal,
+      )
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : 'Сервис временно недоступен.')
+      if (reason instanceof DOMException && reason.name === 'AbortError') {
+        setError('Показ остановлен. Расчёт продолжится на сервере и появится после повторного открытия проверки.')
+        setDatasets([])
+      } else {
+        setError(reason instanceof ApiError ? reason.message : 'Сервис временно недоступен.')
+        setMessage((value) => value || content)
+      }
     } finally {
+      abortRef.current = null
       setSending(false)
+      setStage(null)
+      setDraftUser(null)
+      setDraftAnswer('')
     }
   }
+
+  const stop = () => abortRef.current?.abort()
 
   return (
     <section className="ai-panel" aria-labelledby="ai-panel-title">
@@ -355,14 +458,14 @@ function AiPanel({
 
         <div className={`ai-panel-body ${reportOpen ? '' : 'report-collapsed'}`}>
           <aside className="ai-sessions">
-            <Button view="secondary" size={40} block leftAddons={<Icon name="plus" size={16} />} onClick={() => void onCreateSession()}>
+            <Button view="secondary" size={40} block leftAddons={<Icon name="plus" size={16} />} disabled={sending} onClick={() => void onCreateSession()}>
               Новая проверка
             </Button>
             <p>История</p>
             <div>
               {sessions.map((session, index) => (
                 <div key={session.id} className={`session-row ${activeSession?.id === session.id ? 'active' : ''}`}>
-                  <Button view="transparent" size={48} block onClick={() => void onSelectSession(session)}>
+                  <Button view="transparent" size={48} block disabled={sending} onClick={() => void onSelectSession(session)}>
                     <span><strong>{session.title || `Проверка ${sessions.length - index}`}</strong><small>{date(session.created_at)}</small></span>
                   </Button>
                   {confirmDelete === session.id ? (
@@ -375,6 +478,7 @@ function AiPanel({
                       view="transparent"
                       size={32}
                       className="session-delete"
+                      disabled={sending}
                       aria-label={`Удалить проверку ${session.title || ''}`}
                       onClick={() => setConfirmDelete(session.id)}
                     >
@@ -412,24 +516,44 @@ function AiPanel({
                   {item.meta?.degraded && <small>Детерминированный отчёт · без языковой модели</small>}
                 </article>
               ))}
+              {draftUser && (
+                <article className="ai-message ai-message-user">
+                  <span>Вы</span>
+                  <p>{draftUser}</p>
+                </article>
+              )}
+              {(sending || draftAnswer || stage) && (
+                <article className="ai-message ai-message-assistant ai-message-streaming">
+                  <span>ИИ-проверка</span>
+                  {draftAnswer ? <p>{draftAnswer}</p> : null}
+                  {stage && (
+                    <small className="ai-stage">{stageLabel(stage)}</small>
+                  )}
+                </article>
+              )}
               </div>
             </div>
             <form className="ai-composer" onSubmit={submit}>
               {error && <div className="composer-error" role="alert">{error}</div>}
+              {notice && <div className="composer-notice" role="status">{notice}</div>}
               <div>
                 <div className="composer-settings" ref={settingsRef}>
                   <Button
                     view="transparent"
                     size={48}
                     className="settings-button"
-                    aria-label="Настройки анализа"
+                    aria-label={datasets.length > 0
+                      ? `Настройки анализа, выбрано наборов: ${datasets.length}`
+                      : 'Настройки анализа'}
                     aria-haspopup="menu"
                     aria-expanded={settingsOpen}
-                    disabled={!activeSession}
+                    disabled={!activeSession || sending}
                     onClick={() => setSettingsOpen(!settingsOpen)}
                   >
                     <Icon name="gear" size={18} />
                   </Button>
+                  {/* поповер закрыт чаще, чем открыт, — иначе выбранное невидимо */}
+                  {datasets.length > 0 && <span className="settings-count" aria-hidden="true">{datasets.length}</span>}
                   {settingsOpen && (
                     <div className="settings-popover" role="menu">
                       <p>Фокус анализа</p>
@@ -449,6 +573,33 @@ function AiPanel({
                           {item.label}
                         </Button>
                       ))}
+                      <p className="settings-divider">Добавить к проверке</p>
+                      <div className="settings-sets">
+                        {DATASETS.map((item) => {
+                          const checked = datasets.includes(item.value)
+                          const capped = !checked && datasets.length >= maxDatasets
+                          return (
+                            <Button
+                              key={item.value}
+                              role="menuitemcheckbox"
+                              aria-checked={checked}
+                              view={checked ? 'primary' : 'transparent'}
+                              size={32}
+                              block
+                              disabled={capped}
+                              title={capped ? `За один ход дочитывается до ${maxDatasets} наборов` : undefined}
+                              onClick={() => toggleDataset(item.value)}
+                            >
+                              {item.label}
+                            </Button>
+                          )
+                        })}
+                      </div>
+                      <small className="settings-hint">
+                        {datasets.length >= maxDatasets
+                          ? `Потолок тарифа: ${maxDatasets} за ход. Снимите отметку, чтобы выбрать другой набор.`
+                          : `Отмечено ${datasets.length} из ${maxDatasets}. Действует на одно сообщение.`}
+                      </small>
                     </div>
                   )}
                 </div>
@@ -468,21 +619,33 @@ function AiPanel({
                     }
                   }}
                 />
-                <Button
-                  type="submit"
-                  view="accent"
-                  size={48}
-                  className="send-button"
-                  loading={sending}
-                  disabled={!activeSession || !message.trim()}
-                  aria-label="Отправить"
-                >
-                  <Icon name="send" size={20} />
-                </Button>
+                {sending ? (
+                  <Button
+                    type="button"
+                    view="secondary"
+                    size={48}
+                    className="send-button"
+                    aria-label="Остановить"
+                    onClick={stop}
+                  >
+                    <Icon name="close" size={18} />
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    view="accent"
+                    size={48}
+                    className="send-button"
+                    disabled={!activeSession || !message.trim()}
+                    aria-label="Отправить"
+                  >
+                    <Icon name="send" size={20} />
+                  </Button>
+                )}
               </div>
               <small>
-                Фокус анализа: {ROLES.find((item) => item.value === role)?.label}. Пока отвечает
-                детерминированный backend, агент будет подключён позже.
+                Фокус анализа: {ROLES.find((item) => item.value === role)?.label}.
+                {profile?.profile === 'extended' ? ' Расширенный разбор с инструментами.' : ''}
               </small>
             </form>
           </section>
@@ -550,6 +713,7 @@ export function Workspace(props: Props) {
             aiPanel={(
               <AiPanel
                 auth={auth}
+                profile={profile}
                 sessions={sessions}
                 activeSession={activeSession}
                 messages={messages}
