@@ -16,6 +16,25 @@ colors:
   control: "#eef0f2"
   positive: "#138a50"
   warning: "#ad6700"
+  positive-ink: "#08783f"
+  positive-bg: "#dcf4e5"
+  warning-ink: "#935800"
+  warning-bg: "#ffefce"
+  warning-ink-deep: "#70480b"
+  warning-bg-soft: "#fff5df"
+  danger-ink: "#aa2018"
+  danger-bg: "#ffe3e1"
+  error-ink: "#9e1710"
+  error-bg: "#fff0ef"
+  neutral-ink: "#596572"
+  neutral-bg: "#e9ecef"
+  on-navy: "#c8cfd5"
+  on-navy-soft: "#9aa4ad"
+  on-navy-dim: "#8f9aa4"
+  on-navy-text: "#c5cbd0"
+  navy-line: "#44515d"
+  surface-tint: "#f7f8f8"
+  scrollbar: "#aab1b8"
 typography:
   display:
     fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
@@ -175,6 +194,25 @@ AI-проверка выглядит не как отдельный продук
 - **Белая поверхность:** сервисные карточки, поиск, таблица, чат и диалог.
 - **Фон контролов:** фильтры, пользовательские сообщения и empty states.
 - **Разделитель:** границы панелей, строк и колонок.
+
+### Tonal Ramps
+Семантические цвета живут парами: тёмный тон для текста, светлый для подложки. Пара
+рассчитана на контраст в плашке, а не на самостоятельное применение.
+
+- **positive-ink / positive-bg**, **warning-ink / warning-bg**, **danger-ink / danger-bg**,
+  **neutral-ink / neutral-bg** — светофор надёжности контрагента. Это ядро продукта,
+  а не украшение: цвет здесь несёт оценку риска и произвольной замене не подлежит.
+- **warning-ink-deep / warning-bg-soft** — предупреждение во всю ширину отчёта, где
+  крупная заливка требует тона мягче плашечного.
+- **error-ink / error-bg** — ошибки форм и чата.
+
+### On Navy
+Приглушённые тона для тёмного rail: обычный **Приглушённый** на тёмно-синем не читается.
+**on-navy** — активные пункты, **on-navy-text** — абзацы обложки входа, **on-navy-soft**
+и **on-navy-dim** — подписи и сноски, **navy-line** — границы на тёмном.
+
+**surface-tint** — подложка на полтона светлее холста: разделяет панели без линии.
+**scrollbar** — полоса прокрутки.
 
 ### Named Rules
 **The Bank Owns the Frame Rule.** Тёмно-синий rail и прохладный холст всегда показывают, что AI-сервис находится внутри Альфа-Бизнеса.

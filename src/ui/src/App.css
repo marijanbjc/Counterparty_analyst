@@ -14,6 +14,29 @@
   --ab-control: #eef0f2;
   --ab-green: #138a50;
   --ab-warning: #ad6700;
+  /* Тональные рампы семантики: тёмный тон для текста, светлый для подложки.
+     Светофор надёжности — ядро продукта, его цвета не декоративны. */
+  --ab-green-ink: #08783f;
+  --ab-green-bg: #dcf4e5;
+  --ab-warning-ink: #935800;
+  --ab-warning-bg: #ffefce;
+  --ab-warning-ink-deep: #70480b;
+  --ab-warning-bg-soft: #fff5df;
+  --ab-danger-ink: #aa2018;
+  --ab-danger-bg: #ffe3e1;
+  --ab-error-ink: #9e1710;
+  --ab-error-bg: #fff0ef;
+  --ab-neutral-ink: #596572;
+  --ab-neutral-bg: #e9ecef;
+  /* Приглушённые тона на тёмной навигации: --ab-muted на ней не читается. */
+  --ab-on-navy: #c8cfd5;
+  --ab-on-navy-soft: #9aa4ad;
+  --ab-on-navy-dim: #8f9aa4;
+  --ab-on-navy-text: #c5cbd0;
+  --ab-navy-line: #44515d;
+  /* Подложки на полтона светлее canvas: разделяют панели без линии. */
+  --ab-surface-tint: #f7f8f8;
+  --ab-scrollbar: #aab1b8;
   font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
   color: var(--ab-ink);
   background: var(--ab-bg);
@@ -59,7 +82,7 @@ textarea:focus-visible,
 ::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
   border-radius: 9px;
-  background: #aab1b8;
+  background: var(--ab-scrollbar);
   background-clip: padding-box;
 }
 
@@ -84,8 +107,16 @@ h3,
 .composer-error {
   padding: 11px 13px;
   border-radius: 9px;
-  color: #9e1710;
-  background: #fff0ef;
+  color: var(--ab-error-ink);
+  background: var(--ab-error-bg);
+  font-size: 13px;
+}
+
+.composer-notice {
+  padding: 10px 13px;
+  border-radius: 9px;
+  color: var(--ab-text);
+  background: var(--ab-control);
   font-size: 13px;
 }
 
@@ -113,7 +144,7 @@ h3,
   right: -14vw;
   width: 54vw;
   height: 54vw;
-  border: 1px solid #44515d;
+  border: 1px solid var(--ab-navy-line);
   border-radius: 50%;
   content: "";
 }
@@ -149,7 +180,7 @@ h3,
   position: relative;
   max-width: 560px;
   margin: 32px 0 0;
-  color: #c5cbd0;
+  color: var(--ab-on-navy-text);
   font-size: 19px;
   line-height: 1.5;
 }
@@ -161,7 +192,7 @@ h3,
   display: flex;
   flex-wrap: wrap;
   gap: 20px;
-  color: #9aa4ad;
+  color: var(--ab-on-navy-soft);
   font-size: 12px;
 }
 
@@ -248,7 +279,7 @@ h3,
 
 .business-nav-item {
   justify-content: flex-start !important;
-  color: #c8cfd5 !important;
+  color: var(--ab-on-navy) !important;
   border-radius: 5px !important;
   font-size: 12px !important;
 }
@@ -303,7 +334,7 @@ h3,
 
 .business-sidebar > small {
   padding: 0 7px;
-  color: #8f9aa4;
+  color: var(--ab-on-navy-dim);
   font-size: 9px;
 }
 
@@ -485,7 +516,7 @@ h3,
   margin-bottom: 15px;
   border: 1px solid var(--ab-line);
   border-radius: 9px;
-  background: #f7f8f8;
+  background: var(--ab-surface-tint);
 }
 
 .service-card-ai .service-icon {
@@ -582,7 +613,7 @@ h3,
   min-width: 0;
   padding: 15px 12px;
   border-right: 1px solid var(--ab-line);
-  background: #f6f7f8;
+  background: var(--ab-surface-tint);
 }
 
 .ai-sessions > p {
@@ -755,7 +786,8 @@ h3,
 
 .ai-composer > div:last-of-type,
 .ai-composer > small,
-.composer-error {
+.composer-error,
+.composer-notice {
   width: 100%;
   max-inline-size: 760px;
   margin-inline: auto;
@@ -766,7 +798,8 @@ h3,
 .report-collapsed .ai-thread,
 .report-collapsed .ai-composer > div:last-of-type,
 .report-collapsed .ai-composer > small,
-.report-collapsed .composer-error {
+.report-collapsed .composer-error,
+.report-collapsed .composer-notice {
   max-inline-size: 100%;
 }
 
@@ -852,6 +885,15 @@ h3,
 .ai-message-assistant {
   padding-left: 14px;
   border-left: 1px solid var(--ab-red);
+}
+
+.ai-message-streaming p {
+  min-height: 1.2em;
+}
+
+.ai-stage {
+  color: var(--ab-muted) !important;
+  font-weight: 600;
 }
 
 .ai-message small {
@@ -1048,10 +1090,10 @@ h3,
   text-transform: uppercase;
 }
 
-.reliability-good { color: #08783f; background: #dcf4e5; }
-.reliability-warning { color: #935800; background: #ffefce; }
-.reliability-danger { color: #aa2018; background: #ffe3e1; }
-.reliability-neutral { color: #596572; background: #e9ecef; }
+.reliability-good { color: var(--ab-green-ink); background: var(--ab-green-bg); }
+.reliability-warning { color: var(--ab-warning-ink); background: var(--ab-warning-bg); }
+.reliability-danger { color: var(--ab-danger-ink); background: var(--ab-danger-bg); }
+.reliability-neutral { color: var(--ab-neutral-ink); background: var(--ab-neutral-bg); }
 
 .ai-dossier header h3 {
   margin: 15px 0 5px;
@@ -1076,8 +1118,8 @@ h3,
 
 .report-warning {
   padding: 17px 22px;
-  color: #70480b;
-  background: #fff5df;
+  color: var(--ab-warning-ink-deep);
+  background: var(--ab-warning-bg-soft);
 }
 
 .report-warning strong {
