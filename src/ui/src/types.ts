@@ -1,5 +1,8 @@
 export type RolePreset = 'finance' | 'legal' | 'security' | 'activity' | 'general'
 
+// Роль — свойство сессии, набор — разовое действие на один ход (§7.4).
+export type DataSet = 'finance' | 'legal' | 'security' | 'activity' | 'followups' | 'charts'
+
 export type AuthState = {
   token: string
   userId: string

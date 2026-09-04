@@ -1,6 +1,7 @@
 import type {
   ChatResponse,
   CompareResult,
+  DataSet,
   FactPack,
   MessagePage,
   Profile,
@@ -107,12 +108,18 @@ export const api = {
     return request<{ report: FactPack }>(`/api/sessions/${sessionId}/report`, {}, token)
   },
 
-  chat(token: string, sessionId: string, message: string, role_preset: RolePreset) {
+  chat(
+    token: string,
+    sessionId: string,
+    message: string,
+    role_preset: RolePreset,
+    buttons: DataSet[] = [],
+  ) {
     return request<ChatResponse>(
       '/api/chat',
       {
         method: 'POST',
-        body: JSON.stringify({ session_id: sessionId, message, role_preset }),
+        body: JSON.stringify({ session_id: sessionId, message, role_preset, buttons }),
       },
       token,
     )

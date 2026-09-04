@@ -7,6 +7,7 @@ import { api, ApiError } from '../api'
 import { date, entityKind, money, number, riskName, riskTone } from '../format'
 import type {
   AuthState,
+  DataSet,
   FactPack,
   Message,
   Profile,
@@ -21,6 +22,18 @@ const ROLES: Array<{ value: RolePreset; label: string }> = [
   { value: 'security', label: 'Безопасность' },
   { value: 'activity', label: 'Деятельность' },
 ]
+
+const DATASETS: Array<{ value: DataSet; label: string }> = [
+  { value: 'finance', label: 'Финансы' },
+  { value: 'legal', label: 'Юридический' },
+  { value: 'security', label: 'Безопасность' },
+  { value: 'activity', label: 'Деятельность' },
+  { value: 'followups', label: 'Что запросить' },
+  { value: 'charts', label: 'Графики' },
+]
+
+// Потолок наборов за ход — ExecutionProfile.max_buttons на бэкенде (§8.4).
+const MAX_DATASETS: Record<string, number> = { basic: 2, extended: 6 }
 
 type Props = {
   auth: AuthState
@@ -257,6 +270,7 @@ function Dossier({ pack }: { pack: FactPack | null }) {
 
 function AiPanel({
   auth,
+  profile,
   sessions,
   activeSession,
   messages,
@@ -269,16 +283,18 @@ function AiPanel({
   onChatCompleted,
   hasMore,
   onLoadEarlier,
-}: Omit<Props, 'profile' | 'onLogout'>) {
+}: Omit<Props, 'onLogout'>) {
   const [message, setMessage] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [mobileView, setMobileView] = useState<'chat' | 'report'>('chat')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [datasets, setDatasets] = useState<DataSet[]>([])
   const [reportOpen, setReportOpen] = useState(true)
   const settingsRef = useRef<HTMLDivElement>(null)
   const role = activeSession?.role_preset || 'general'
+  const maxDatasets = MAX_DATASETS[profile?.profile ?? ''] ?? MAX_DATASETS.basic
   const orderedMessages = useMemo(
     () => messages.filter((item) => item.role === 'user' || item.role === 'assistant'),
     [messages],
@@ -311,6 +327,14 @@ function AiPanel({
     }
   }
 
+  const toggleDataset = (value: DataSet) => {
+    setDatasets((items) => (
+      items.includes(value)
+        ? items.filter((item) => item !== value)
+        : items.length < maxDatasets ? [...items, value] : items
+    ))
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     if (!activeSession || !message.trim()) return
@@ -318,9 +342,11 @@ function AiPanel({
     setError(null)
     try {
       const content = message.trim()
-      const response = await api.chat(auth.token, activeSession.id, content, role)
+      const response = await api.chat(auth.token, activeSession.id, content, role, datasets)
       onChatCompleted(response.messages, response.report, response.session)
       setMessage('')
+      // Набор действует один ход: следующий вопрос начинается с чистой отметки (§7.4).
+      setDatasets([])
       // На переспрос и сравнение отчёта нет — переключать мобильный вид не на что.
       if (response.report) setMobileView('report')
     } catch (reason) {
@@ -424,7 +450,9 @@ function AiPanel({
                     view="transparent"
                     size={48}
                     className="settings-button"
-                    aria-label="Настройки анализа"
+                    aria-label={datasets.length > 0
+                      ? `Настройки анализа, выбрано наборов: ${datasets.length}`
+                      : 'Настройки анализа'}
                     aria-haspopup="menu"
                     aria-expanded={settingsOpen}
                     disabled={!activeSession}
@@ -432,6 +460,8 @@ function AiPanel({
                   >
                     <Icon name="gear" size={18} />
                   </Button>
+                  {/* поповер закрыт чаще, чем открыт, — иначе выбранное невидимо */}
+                  {datasets.length > 0 && <span className="settings-count" aria-hidden="true">{datasets.length}</span>}
                   {settingsOpen && (
                     <div className="settings-popover" role="menu">
                       <p>Фокус анализа</p>
@@ -451,6 +481,33 @@ function AiPanel({
                           {item.label}
                         </Button>
                       ))}
+                      <p className="settings-divider">Добавить к проверке</p>
+                      <div className="settings-sets">
+                        {DATASETS.map((item) => {
+                          const checked = datasets.includes(item.value)
+                          const capped = !checked && datasets.length >= maxDatasets
+                          return (
+                            <Button
+                              key={item.value}
+                              role="menuitemcheckbox"
+                              aria-checked={checked}
+                              view={checked ? 'primary' : 'transparent'}
+                              size={32}
+                              block
+                              disabled={capped}
+                              title={capped ? `За один ход дочитывается до ${maxDatasets} наборов` : undefined}
+                              onClick={() => toggleDataset(item.value)}
+                            >
+                              {item.label}
+                            </Button>
+                          )
+                        })}
+                      </div>
+                      <small className="settings-hint">
+                        {datasets.length >= maxDatasets
+                          ? `Потолок тарифа: ${maxDatasets} за ход. Снимите отметку, чтобы выбрать другой набор.`
+                          : `Отмечено ${datasets.length} из ${maxDatasets}. Действует на одно сообщение.`}
+                      </small>
                     </div>
                   )}
                 </div>
@@ -552,6 +609,7 @@ export function Workspace(props: Props) {
             aiPanel={(
               <AiPanel
                 auth={auth}
+                profile={profile}
                 sessions={sessions}
                 activeSession={activeSession}
                 messages={messages}
