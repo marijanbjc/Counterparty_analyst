@@ -8,6 +8,8 @@ colors:
   banking-navy: "#202a34"
   banking-navy-soft: "#303b46"
   muted: "#687482"
+  muted-inverse: "#aeb7bf"
+  info: "#1687f8"
   divider: "#dfe3e7"
   canvas: "#f3f4f5"
   surface: "#ffffff"
@@ -69,6 +71,12 @@ typography:
     fontWeight: 400
     lineHeight: 1.4
     letterSpacing: "normal"
+  caption-sm:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.35
+    letterSpacing: "normal"
   micro:
     fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
     fontSize: "10px"
@@ -81,6 +89,12 @@ typography:
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "0.08em"
+  badge:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "8px"
+    fontWeight: 800
+    lineHeight: 1.1
+    letterSpacing: "normal"
 rounded:
   bubble-tail: "2px"
   status: "4px"
@@ -183,10 +197,11 @@ AI-проверка выглядит не как отдельный продук
 - **Subtitle** (700, 18px, 1.25): заголовок панели ИИ-проверки и словесный знак в мобильной шапке.
 - **Body-lg** (400, 14px, 1.5): крупный поясняющий текст и мобильные варианты Lead и Subtitle.
 - **Body** (400, 13px, 1.6): сообщения и объяснения.
-- **Caption** (400, 12px, 1.4): подписи в отчёте, пояснения под полями, вторичные строки списков; допускается 11px там, где строка обязана уместиться в одну.
+- **Caption** (400, 12px, 1.4): подписи в отчёте, пояснения под полями, вторичные строки списков.
+- **Caption-sm** (400, 11px, 1.35): то же там, где строка обязана уместиться в одну.
 - **Micro** (400, 10px, 1.35): даты сессий, счётчики, служебные пометки в плотных списках.
 - **Label** (700, 9px, 0.08em, uppercase): заголовки таблицы, секции истории и служебные статусы.
-- **Badge** (800, 7–8px): счётчик в навигации и лента «НОВОЕ». Плашка на цветной подложке — единственное место ниже Label, и текста в ней не больше слова.
+- **Badge** (800, 8px): счётчик в навигации и лента «НОВОЕ». Плашка на цветной подложке — единственное место ниже Label, и текста в ней не больше слова.
 
 Ярусы Caption и Micro — не исключения, а рабочая часть плотного банковского
 интерфейса: боковая панель, история проверок и таблицы отчёта на них держатся.

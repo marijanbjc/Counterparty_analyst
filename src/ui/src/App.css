@@ -5,6 +5,9 @@
   --ab-navy: #202a34;
   --ab-navy-soft: #303b46;
   --ab-muted: #687482;
+  /* приглушённый на тёмной навигации: --ab-muted на ней не читается */
+  --ab-muted-inverse: #aeb7bf;
+  --ab-info: #1687f8;
   --ab-line: #dfe3e7;
   --ab-bg: #f3f4f5;
   --ab-surface: #ffffff;
@@ -269,7 +272,7 @@ h3,
   display: flex;
   justify-content: space-between;
   margin: 22px 9px 9px;
-  color: #aeb7bf;
+  color: var(--ab-muted-inverse);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -280,8 +283,8 @@ h3,
   padding: 2px 4px;
   border-radius: 4px;
   color: white;
-  background: #1687f8;
-  font-size: 7px;
+  background: var(--ab-info);
+  font-size: 8px;
   font-weight: 800;
 }
 
