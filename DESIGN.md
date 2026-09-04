@@ -15,6 +15,12 @@ colors:
   positive: "#138a50"
   warning: "#ad6700"
 typography:
+  display:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "clamp(52px, 6vw, 96px)"
+    fontWeight: 700
+    lineHeight: 1.0
+    letterSpacing: "-0.055em"
   headline:
     fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
     fontSize: "34px"
@@ -32,6 +38,18 @@ typography:
     fontSize: "13px"
     fontWeight: 400
     lineHeight: 1.6
+    letterSpacing: "normal"
+  caption:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.4
+    letterSpacing: "normal"
+  micro:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "10px"
+    fontWeight: 400
+    lineHeight: 1.35
     letterSpacing: "normal"
   label:
     fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
@@ -132,10 +150,19 @@ AI-проверка выглядит не как отдельный продук
 **Character:** Onest делает заголовки плотными и узнаваемыми, а Segoe UI Variable сохраняет нейтральную банковскую читаемость в навигации, таблицах, чате и досье.
 
 ### Hierarchy
-- **Headline** (700, 34px, 1.1): заголовок раздела; на mobile уменьшается до 29px.
+- **Display** (700, clamp 52–96px, -0.055em): единственное место — обложка входа; на mobile 46px. Внутри рабочего интерфейса не применяется.
+- **Headline** (700, 34px, 1.1): заголовок раздела; на mobile уменьшается до 29px. Приветствие в чате использует облегчённый вариант 30px.
 - **Title** (700, 21px, 1.2): заголовки поиска, отчётов и компании в досье.
 - **Body** (400, 13px, 1.6): сообщения и объяснения; крупный поясняющий текст может достигать 14–19px.
+- **Caption** (400, 12px, 1.4): подписи в отчёте, пояснения под полями, вторичные строки списков; допускается 11px там, где строка обязана уместиться в одну.
+- **Micro** (400, 10px, 1.35): даты сессий, счётчики, служебные пометки в плотных списках.
 - **Label** (700, 9px, 0.08em, uppercase): заголовки таблицы, секции истории и служебные статусы.
+- **Badge** (800, 7–8px): счётчик в навигации и лента «НОВОЕ». Плашка на цветной подложке — единственное место ниже Label, и текста в ней не больше слова.
+
+Ярусы Caption и Micro — не исключения, а рабочая часть плотного банковского
+интерфейса: боковая панель, история проверок и таблицы отчёта на них держатся.
+Подъём их до Body раздувает панели и ломает плотность, ради которой шкала
+и строилась.
 
 ### Named Rules
 **The Compact Banking Type Rule.** Рабочие подписи остаются малыми и плотными, но основной текст не опускается ниже читаемого размера и получает увеличенный line-height.

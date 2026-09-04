@@ -80,7 +80,7 @@ h3,
 .form-error,
 .composer-error {
   padding: 11px 13px;
-  border-radius: 7px;
+  border-radius: 9px;
   color: #9e1710;
   background: #fff0ef;
   font-size: 13px;
@@ -278,7 +278,7 @@ h3,
 
 .nav-badge {
   padding: 2px 4px;
-  border-radius: 3px;
+  border-radius: 4px;
   color: white;
   background: #1687f8;
   font-size: 7px;
@@ -539,7 +539,7 @@ h3,
   place-items: center;
   width: 38px;
   height: 38px;
-  border-radius: 8px;
+  border-radius: 9px;
   color: white;
   background: var(--ab-red);
 }
@@ -599,14 +599,14 @@ h3,
 
 .ai-sessions > div button:not(.session-delete) {
   justify-content: flex-start !important;
-  border-radius: 6px !important;
+  border-radius: 5px !important;
 }
 
 .session-row {
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: 6px;
+  border-radius: 5px;
 }
 
 /* отступ только у кнопки сессии: под корзину, иначе название заезжает на неё */
@@ -650,7 +650,7 @@ h3,
   display: flex;
   gap: 3px;
   padding: 2px;
-  border-radius: 6px;
+  border-radius: 5px;
   background: white;
   box-shadow: 0 2px 10px rgba(16, 22, 28, 0.18);
 }
@@ -702,7 +702,7 @@ h3,
   height: 46px;
   padding: 0;
   border: 1px solid var(--ab-line);
-  border-radius: 7px;
+  border-radius: 9px;
   color: var(--ab-muted);
   background: white;
   box-shadow: 0 2px 8px rgba(16, 22, 28, 0.1);
@@ -736,23 +736,27 @@ h3,
   overflow-y: auto;
 }
 
-/* колонка чтения: ширину держит обёртка, чтобы у реплик осталась своя */
+/* колонка чтения: ширину держит обёртка, чтобы у реплик осталась своя.
+   Ширину анимирует max-inline-size, а не width: у флекс-колонки это
+   не вызывает пересчёта раскладки всей ленты сообщений на каждом кадре. */
 .ai-thread {
   display: flex;
   flex: 1;
   flex-direction: column;
   gap: 22px;
-  width: min(100%, 760px);
+  width: 100%;
+  max-inline-size: 760px;
   margin-inline: auto;
-  transition: width 280ms cubic-bezier(.16, 1, .3, 1);
+  transition: max-inline-size 280ms cubic-bezier(.16, 1, .3, 1);
 }
 
 .ai-composer > div:last-of-type,
 .ai-composer > small,
 .composer-error {
-  width: min(100%, 760px);
+  width: 100%;
+  max-inline-size: 760px;
   margin-inline: auto;
-  transition: width 280ms cubic-bezier(.16, 1, .3, 1);
+  transition: max-inline-size 280ms cubic-bezier(.16, 1, .3, 1);
 }
 
 /* отчёт скрыт — диалогу отдаётся вся ширина, иначе текст висит посреди пустого окна */
@@ -760,7 +764,7 @@ h3,
 .report-collapsed .ai-composer > div:last-of-type,
 .report-collapsed .ai-composer > small,
 .report-collapsed .composer-error {
-  width: 100%;
+  max-inline-size: 100%;
 }
 
 .loading-state {
@@ -922,7 +926,7 @@ h3,
   min-width: 16px;
   height: 16px;
   padding: 0 4px;
-  border-radius: 8px;
+  border-radius: 9px;
   background: var(--ab-red);
   color: white;
   font-size: 10px;
