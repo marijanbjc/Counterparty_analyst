@@ -27,7 +27,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
 def cmd_mcp(args: argparse.Namespace) -> None:
     from src.mcp.server import run
 
-    run()
+    run(http=args.http, host=args.host, port=args.port)
 
 
 def main() -> int:
@@ -43,6 +43,9 @@ def main() -> int:
     serve_parser.set_defaults(func=cmd_serve)
 
     mcp_parser = commands.add_parser("mcp", help="запустить MCP-сервер")
+    mcp_parser.add_argument("--http", action="store_true", help="поднять по HTTP вместо stdio")
+    mcp_parser.add_argument("--host", default="127.0.0.1")
+    mcp_parser.add_argument("--port", type=int, default=8765)
     mcp_parser.set_defaults(func=cmd_mcp)
 
     args = parser.parse_args()
