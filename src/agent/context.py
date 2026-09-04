@@ -29,10 +29,11 @@ _ZSK_LABELS = {"GREEN": "зелёный", "YELLOW": "жёлтый", "RED": "кр
 
 @dataclass(frozen=True)
 class Window:
-    messages: list[dict[str, str]]
+    messages: list[dict]
     # Наборы, не влезшие в бюджет. Проглотить их нельзя: дочитывание уже оплачено
     # вызовом инструментов, и пользователь должен узнать, что данных в ответе нет.
     dropped_sets: tuple[str, ...] = ()
+    dropped_extra_blocks: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -53,15 +54,19 @@ def build(
     user_block_tokens: int,
     with_anchor: bool,
     button_sets: dict[str, Any] | None = None,
+    extra_blocks: dict[str, Any] | None = None,
+    tools_scope: str | None = None,
 ) -> Window:
     budget = profile.budget_tokens
-    head: list[dict[str, str]] = [{"role": "system", "content": system_text}]
+    head: list[dict] = [{"role": "system", "content": system_text}]
     # Замеренная константа — нижняя граница: если текст промпта длиннее замера,
     # верим оценке, иначе бюджет окажется занижен молча.
     spent = max(tokens.system_prompt(), tokens.estimate(system_text)) + user_block_tokens
+    if tools_scope:
+        spent += tokens.tools(tools_scope)
 
     if with_anchor:
-        text = anchor(session, session_id, attach_tools=profile.attach_tools)
+        text = anchor(session, session_id, attach_tools=profile.attach_tools or tools_scope is not None)
         if text:
             head.append({"role": "system", "content": text})
             spent += tokens.estimate(text)
@@ -69,6 +74,13 @@ def build(
     # Рамка про дочитанные наборы платная и обязательная: без неё модель примет
     # их за часть базового пакета. Резервируем её до отбора, иначе выжившие наборы
     # займут бюджет ровно на её размер сверх посчитанного.
+    extras, extra_dropped = _fit_sets(
+        _weigh(extra_blocks or {}),
+        room=budget - spent - (tokens.estimate(prompts.FOCUSED_HEADER) if extra_blocks else 0),
+    )
+    extra_frame = tokens.estimate(prompts.FOCUSED_HEADER) if extras else 0
+    spent += extra_frame + sum(item.cost for item in extras)
+
     frame = tokens.estimate(prompts.SETS_HEADER) if button_sets else 0
     kept, dropped = _fit_sets(_weigh(button_sets or {}), room=budget - spent - frame)
     if not kept:
@@ -77,8 +89,8 @@ def build(
     # то есть старые реплики выдавливаются в ноль раньше, чем уйдёт первый набор.
     spent += frame + sum(item.cost for item in kept)
     dialog = _dialog(session, session_id, room=budget - spent)
-    tail = {"role": "user", "content": _with_sets(user_block, kept)}
-    return Window([*head, *dialog, tail], dropped)
+    tail = {"role": "user", "content": _with_sets(_with_focused(user_block, extras), kept)}
+    return Window([*head, *dialog, tail], dropped, extra_dropped)
 
 
 def _weigh(button_sets: dict[str, Any]) -> list[_Set]:
@@ -100,6 +112,13 @@ def _fit_sets(items: list[_Set], room: int) -> tuple[list[_Set], tuple[str, ...]
     while kept and sum(item.cost for item in kept) > room:
         dropped.append(kept.pop(0).name)
     return kept, tuple(dropped)
+
+
+def _with_focused(user_block: str, kept: list[_Set]) -> str:
+    if not kept:
+        return user_block
+    ordered = sorted(kept, key=lambda item: item.order)
+    return "\n".join([user_block, prompts.FOCUSED_HEADER, *(item.text for item in ordered)])
 
 
 def _with_sets(user_block: str, kept: list[_Set]) -> str:
@@ -146,9 +165,9 @@ def _anchor_entry(
     if numbers:
         lines.append(f"   {numbers}")
     if attach_tools:
-        # Строка §4.1 полезна только когда схемы инструментов приложены (§4.2):
+        # Строка полезна только когда схемы инструментов приложены (§4.2):
         # иначе она предлагает модели вызов, которого у неё нет.
-        lines.append(f'   Полный отчёт: get_analysis("{analysis.inn}").')
+        lines.append(f'   Полный отчёт: get_contractor_full("{analysis.inn}").')
     return lines
 
 
@@ -179,7 +198,7 @@ def _millions(value: int) -> str:
     return f"{value / 1_000_000:,.1f} млн ₽".replace(",", " ").replace(".", ",")
 
 
-def _dialog(session: Session, session_id: UUID, room: int) -> list[dict[str, str]]:
+def _dialog(session: Session, session_id: UUID, room: int) -> list[dict]:
     settings = get_settings()
     rows = history_repository.last_messages(session, session_id, settings.context_history_max_messages)
     picked: list[dict[str, str]] = []

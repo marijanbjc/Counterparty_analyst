@@ -70,11 +70,9 @@ def _followups(inn: str) -> dict:
     return {"questions": questions_tools.draft_followup_questions(inn)}
 
 
-def _charts(inn: str) -> dict:
-    return {
-        "revenue_profit": charts_tools.build_chart(inn, "revenue_profit"),
-        "execproc_timeline": charts_tools.build_chart(inn, "execproc_timeline"),
-    }
+def _charts(inn: str, all_types: bool = False) -> dict:
+    chart_types = charts_tools.SINGLE if all_types else ("revenue_profit", "execproc_timeline")
+    return {chart_type: charts_tools.build_chart(inn, chart_type) for chart_type in chart_types}
 
 
 _SETS: dict[str, Callable[[str], dict]] = {
@@ -100,16 +98,25 @@ class Prefetched:
     def notice(self) -> str | None:
         """Отсечённое сверх потолка нельзя проглатывать: пользователь отметил набор
         и вправе знать, что тот не дочитан и почему (§7.4)."""
-        if not self.dropped:
-            return None
-        labels = ", ".join(LABELS[name] for name in self.dropped)
-        return (
-            f"На вашем тарифе за один ход дочитывается до {self.max_buttons} наборов данных. "
-            f"Не поместились: {labels} — отметьте их следующим сообщением."
-        )
+        parts: list[str] = []
+        if self.dropped:
+            labels = ", ".join(LABELS[name] for name in self.dropped)
+            parts.append(
+                f"На вашем тарифе за один ход дочитывается до {self.max_buttons} наборов данных. "
+                f"Не поместились: {labels} — отметьте их следующим сообщением."
+            )
+        if self.unknown:
+            parts.append(f"Неизвестные наборы данных пропущены: {', '.join(self.unknown)}.")
+        return " ".join(parts) or None
 
 
-def collect(names: Sequence[str], inn: str, max_buttons: int) -> Prefetched:
+def collect(
+    names: Sequence[str],
+    inn: str,
+    max_buttons: int,
+    *,
+    extended: bool = False,
+) -> Prefetched:
     """Дочитывает наборы `names` по контрагенту `inn`, не больше `max_buttons` за ход.
 
     Список приходит от клиента, поэтому мусор и повторы в нём не роняют ход:
@@ -125,8 +132,13 @@ def collect(names: Sequence[str], inn: str, max_buttons: int) -> Prefetched:
     known = [name for name in requested if name in _SETS]
     limit = max(max_buttons, 0)
 
+    selected = known[:limit]
+    data = {
+        name: (_charts(inn, all_types=True) if name == CHARTS and extended else _SETS[name](inn))
+        for name in selected
+    }
     return Prefetched(
-        data={name: _SETS[name](inn) for name in known[:limit]},
+        data=data,
         dropped=tuple(known[limit:]),
         unknown=unknown,
         max_buttons=limit,

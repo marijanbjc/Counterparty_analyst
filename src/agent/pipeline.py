@@ -15,6 +15,7 @@
 не выносится ни одного ORM-объекта, кроме уже загруженных и отсоединённых.
 """
 
+import json
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -24,19 +25,23 @@ from uuid import UUID
 import anyio.to_thread
 from sqlalchemy.orm import Session
 
-from src.agent import context, limiter, llm, prefetch, prompts
+from src.agent import catalog, context, dispatcher, limiter, llm, prefetch, prompts
 from src.agent import router as agent_router
 from src.agent import tokens, verdicts
-from src.agent.profiles import ExecutionProfile, profile_for
+from src.agent.profiles import EXTENDED, ExecutionProfile, profile_for
 from src.config.settings import get_settings
 from src.core import factpack
+from src.core import inn as inn_module
 from src.core import report as report_builder
+from src.core import validation
 from src.db.analyses import repository as analyses_repository
 from src.db.client import repository as client_repository
 from src.db.engine import db_session
 from src.db.history import repository as history_repository
 from src.db.models import Message
 from src.db.models import Session as ChatSession
+from src.mcp import toolsets
+from src.mcp.advanced.analysis import BUILDERS, run_focused_analysis
 from src.mcp.tools.selection import compare_contractors
 
 # Ответ на уточнение — реплика, а не разбор (§1.2), и резервировать под него полный
@@ -58,8 +63,13 @@ STAGE_VERDICT = "verdict"
 STAGE_CONTEXT = "context"
 STAGE_WAITING_LIMIT = "waiting_limit"
 STAGE_LLM = "llm"
+STAGE_TOOLS = "tools"
+STAGE_FOCUSED_PREFIX = "focused_"
 STAGE_REPAIR = "repair"
 STAGE_PERSIST = "persist"
+
+# На базовом профиле разбор без цикла; уточнение получает одну попытку вызвать инструменты.
+BASIC_CLARIFY_ROUNDS = 1
 
 # Регулярка «упомянуто?» вместо валидатора: не нашлось — дописываем готовую строку
 # из самого расхождения, ноль токенов и без перегенерации (§6.3).
@@ -132,7 +142,7 @@ class _Plan:
     role_preset: str
     message: str
     stages: tuple[str, ...] = ()
-    llm_messages: list[dict[str, str]] | None = None
+    llm_messages: list[dict] | None = None
     schema: dict | None = None
     expected_completion: int = 0
     answer: str | None = None  # готовая реплика, когда модель не нужна
@@ -145,6 +155,9 @@ class _Plan:
     notice: str | None = None
     last: dict[str, Any] | None = None
     title: str | None = None
+    tool_rounds: int = 0
+    tool_names: list[str] = field(default_factory=list)
+    allowed_inns: tuple[str, ...] = ()
 
 
 async def run_turn(
@@ -178,26 +191,60 @@ async def run_turn(
             yield event
         return
 
-    if _will_wait(plan):
-        # На бесплатном ключе ожидание окна — самая длинная пауза за ход, и без
-        # явного события интерфейс молчит дольше всего именно когда всё штатно.
-        yield Stage(STAGE_WAITING_LIMIT)
-    yield Stage(STAGE_LLM)
-
     streamed: list[str] = []
     result: llm.Result | None = None
     failure: str | None = None
-    async for event in llm.stream(
-        plan.llm_messages, plan.schema, get_settings().llm_tpm_limit, plan.expected_completion
-    ):
-        if isinstance(event, llm.Delta):
-            streamed.append(event.text)
-            yield Delta(event.text)
-        elif isinstance(event, llm.Failure):
-            failure = event.detail
+    messages = list(plan.llm_messages)
+    allowed = set(plan.allowed_inns)
+    names = list(plan.tool_names)
+    remaining = plan.tool_rounds
+    loaded: tuple[str, ...] = ()
+    called_any = False
+
+    while result is None and failure is None:
+        use_tools = remaining > 0 and bool(names)
+        tools_payload = catalog.openai_tools(names) if use_tools else None
+        schema = None if use_tools else plan.schema
+        if _request_tokens(messages, tools_payload) > plan.profile.budget_tokens:
+            failure = "Контекст инструментов превысил бюджет хода."
             break
-        else:
-            result = event
+        if _will_wait(plan, messages, tools_payload):
+            yield Stage(STAGE_WAITING_LIMIT)
+        yield Stage(STAGE_LLM)
+        called = False
+        async for event in llm.stream(
+            messages, schema, get_settings().llm_tpm_limit, plan.expected_completion, tools=tools_payload
+        ):
+            if isinstance(event, llm.ToolCalls):
+                if not use_tools:
+                    failure = "Модель вызвала инструмент вне разрешённого цикла."
+                    break
+                yield Stage(STAGE_TOOLS)
+                messages, allowed, loaded, names = await _apply_tool_calls(
+                    messages, event, allowed, loaded, plan, set(names)
+                )
+                plan.allowed_inns = tuple(sorted(allowed))
+                remaining -= 1
+                called_any = True
+                next_tools = catalog.openai_tools(names) if remaining > 0 and names else None
+                _compact_tool_results(messages, next_tools, plan.profile.budget_tokens)
+                called = True
+                break
+            if isinstance(event, llm.Delta):
+                # После tool_call буферизуем финальную реплику до проверки ИНН:
+                # иначе неизвестный ИНН уже окажется на экране до валидации.
+                if plan.scenario != agent_router.CLARIFY and not called_any:
+                    streamed.append(event.text)
+                    yield Delta(event.text)
+            elif isinstance(event, llm.Failure):
+                failure = event.detail
+                break
+            else:
+                result = event
+                break
+        if called:
+            continue
+        break
 
     if result is None:
         detail = failure or "Модель не вернула ответ."
@@ -262,7 +309,7 @@ def _prepare(
             message,
             has_context=last is not None,
             requests_used=quota.requests_used if quota else 0,
-            requests_limit=quota.requests_limit if quota else profile.requests_limit,
+            requests_limit=profile.requests_limit,
             max_compare=profile.max_compare,
         )
         if route.error:
@@ -304,19 +351,35 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | 
         raise TurnError(404, "Контрагента с таким ИНН в базе нет.")
 
     decision = verdicts.decide(pack)
-    sets = prefetch.collect(buttons or (), pack["inn"], plan.profile.max_buttons)
+    sets = prefetch.collect(
+        buttons or (),
+        pack["inn"],
+        plan.profile.max_buttons,
+        extended=plan.profile.name == EXTENDED,
+    )
+    _configure_tools(session, plan, (pack["inn"],))
+    focused = _focused_blocks(pack["inn"], plan)
     window = context.build(
         session,
         plan.session_id,
         profile=plan.profile,
-        system_text=prompts.system(prompts.REPORT_KEYS),
+        system_text=prompts.system(
+            prompts.REPORT_KEYS, role=plan.role_preset, with_tools=plan.tool_rounds > 0
+        ),
         user_block=prompts.analyze_block(plan.message, decision, pack),
         user_block_tokens=context.user_block_cost(plan.message, plan.profile.factpack_mode),
         # В разборе факт-пакет и так в контексте, якорь дублировал бы его (§4.1).
         with_anchor=False,
         button_sets=sets.data,
+        extra_blocks=focused or None,
+        tools_scope=_tools_scope(plan),
     )
-    plan.stages = (STAGE_PREFETCH, STAGE_VERDICT, STAGE_CONTEXT)
+    plan.stages = (
+        STAGE_PREFETCH,
+        STAGE_VERDICT,
+        *(f"{STAGE_FOCUSED_PREFIX}{name}" for name in focused),
+        STAGE_CONTEXT,
+    )
     plan.pack = pack
     plan.packs = [pack]
     plan.verdict = decision["verdict"]
@@ -336,19 +399,28 @@ def _plan_compare(session: Session, plan: _Plan, inns: tuple[str, ...]) -> None:
 
     # Пакеты нужны не модели, а коду: вердикт и обязательные упоминания считаются
     # по ним, в промпт уходит сводка сравнения — она короче N пакетов.
-    packs = factpack.build_many(session, [row["inn"] for row in payload["matrix"]], role=plan.role_preset)
+    packs = factpack.build_many(
+        session,
+        [row["inn"] for row in payload["matrix"]],
+        role=plan.role_preset,
+        mode=plan.profile.factpack_mode,
+    )
     decisions = [{"inn": pack["inn"], **verdicts.decide(pack)} for pack in packs]
     block = prompts.compare_block(plan.message, decisions, payload)
     # Наборы кнопок в сравнение не идут: кнопка висит на отчёте одного контрагента
     # (§7.4), а здесь их несколько, и дочитывать набор непонятно по кому.
+    _configure_tools(session, plan, tuple(row["inn"] for row in payload["matrix"]))
     window = context.build(
         session,
         plan.session_id,
         profile=plan.profile,
-        system_text=prompts.system(prompts.REPORT_KEYS),
+        system_text=prompts.system(
+            prompts.REPORT_KEYS, role=plan.role_preset, with_tools=plan.tool_rounds > 0
+        ),
         user_block=block,
         user_block_tokens=context.user_block_cost(block),
         with_anchor=True,
+        tools_scope=_tools_scope(plan),
     )
     plan.stages = (STAGE_PREFETCH, STAGE_VERDICT, STAGE_CONTEXT)
     plan.packs = packs
@@ -369,17 +441,21 @@ def _plan_clarify(session: Session, plan: _Plan, last: Any) -> None:
         "report": pack or None,
     }
     plan.contractor = {"inn": last.inn, "short_name": pack.get("short_name") or last.inn}
-    block = prompts.clarify_block(plan.message)
+    _configure_tools(session, plan, (last.inn,))
+    block = prompts.clarify_block(plan.message, with_tools=plan.tool_rounds > 0)
     # Кнопки здесь игнорируются: набор висит на свежем разборе, а уточнение
     # его не делает — дочитывать данные не к чему приложить.
     window = context.build(
         session,
         plan.session_id,
         profile=plan.profile,
-        system_text=prompts.system(prompts.REPLY_KEYS),
+        system_text=prompts.system(
+            prompts.REPLY_KEYS, role=plan.role_preset, with_tools=plan.tool_rounds > 0
+        ),
         user_block=block,
         user_block_tokens=context.user_block_cost(block),
         with_anchor=True,
+        tools_scope=_tools_scope(plan),
     )
     plan.stages = (STAGE_CONTEXT,)
     plan.llm_messages = window.messages
@@ -387,7 +463,7 @@ def _plan_clarify(session: Session, plan: _Plan, last: Any) -> None:
     plan.expected_completion = get_settings().tokens_expected_completion // CLARIFY_COMPLETION_DIVISOR
 
 
-def _will_wait(plan: _Plan) -> bool:
+def _will_wait(plan: _Plan, messages: list[dict] | None = None, tools: list[dict] | None = None) -> bool:
     """Придётся ли лимитеру ждать освобождения окна.
 
     Момент ожидания живёт внутри `limiter.reserve()`, наружу он не сигналится,
@@ -396,13 +472,56 @@ def _will_wait(plan: _Plan) -> bool:
     свободного остатка минутного окна.
     """
     settings = get_settings()
-    text = "".join(str(item.get("content") or "") for item in plan.llm_messages or ())
-    need = tokens.estimate(text) + plan.expected_completion
+    payload = messages if messages is not None else plan.llm_messages or ()
+    need = _request_tokens(payload, tools) + plan.expected_completion
     return limiter.get_limiter(settings.llm_tpm_limit).used + need > settings.llm_tpm_limit
+
+
+def _request_tokens(messages: list[dict], tools: list[dict] | None) -> int:
+    # JSON целиком включает assistant.tool_calls и tool_call_id, которые нельзя
+    # потерять в оценке повторных итераций.
+    text = json.dumps(messages, ensure_ascii=False, default=str)
+    if tools:
+        text += json.dumps(tools, ensure_ascii=False)
+    return tokens.estimate(text)
+
+
+def _compact_tool_results(
+    messages: list[dict],
+    tools: list[dict] | None,
+    budget: int,
+) -> None:
+    """Заменяет слишком большие tool-ответы явной пометкой, не режет JSON."""
+    replacement = json.dumps(
+        {
+            "found": False,
+            "reason": "tool_result_too_large",
+            "hint": "Ответ инструмента не поместился в контекст. Уточните запрос.",
+        },
+        ensure_ascii=False,
+    )
+    indices = sorted(
+        (index for index, item in enumerate(messages) if item.get("role") == "tool"),
+        key=lambda index: len(str(messages[index].get("content") or "")),
+        reverse=True,
+    )
+    for index in indices:
+        if _request_tokens(messages, tools) <= budget:
+            return
+        messages[index]["content"] = replacement
 
 
 def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
     """Исход хода из ответа модели. Чистая функция: БД здесь нет."""
+    generated = "\n".join(
+        str(result.data.get(key) or "")
+        for key in (prompts.ANSWER, prompts.SUMMARY, prompts.ANALYSIS, prompts.KEY_RISKS)
+    )
+    if plan.scenario == agent_router.CLARIFY:
+        check = validation.validate(generated, {"allowed_inns": plan.allowed_inns})
+        if any(item.get("rule") == validation.UNKNOWN_INN for item in check["violations"]):
+            return _degraded(plan, "Модель сослалась на ИНН вне текущей сессии.")
+
     if plan.scenario == agent_router.CLARIFY:
         last = plan.last or {}
         answer = _text(result.data, prompts.ANSWER) or last.get("summary") or ""
@@ -522,6 +641,8 @@ def _persist(plan: _Plan, outcome: dict[str, Any]) -> dict[str, Any]:
                 report=plan.pack,
                 analysis=outcome.get("analysis") or (plan.baseline or {}).get("analysis"),
             )
+        elif plan.scenario == agent_router.COMPARE:
+            _persist_comparison(session, plan)
         # факт-пакет в историю не кладём: он живёт в analyses, а окно контекста его вырезает
         history_repository.add_message(
             session,
@@ -533,6 +654,9 @@ def _persist(plan: _Plan, outcome: dict[str, Any]) -> dict[str, Any]:
                 "scenario": plan.scenario,
                 "inn": (outcome.get("contractor") or {}).get("inn"),
                 "degraded": outcome.get("degraded", False),
+                # ИНН, возвращённые инструментами, становятся допустимыми и на
+                # следующих ходах этой сессии; MCP-функции сами stateless.
+                "_allowed_inns": list(plan.allowed_inns),
             },
         )
         if plan.needs_llm:
@@ -542,6 +666,26 @@ def _persist(plan: _Plan, outcome: dict[str, Any]) -> dict[str, Any]:
             )
         messages = _turn_messages(session, plan.session_id)
         return {**outcome, "session": chat, "messages": messages}
+
+
+def _persist_comparison(session: Session, plan: _Plan) -> None:
+    """Привязывает каждого участника сравнения, не портя глобальный кэш."""
+    for pack in plan.packs:
+        existing = analyses_repository.get(session, pack["inn"], plan.role_preset)
+        if existing is not None:
+            analyses_repository.link_to_session(session, plan.session_id, existing)
+            continue
+        baseline = verdicts.apply(report_builder.build(pack), pack)
+        analyses_repository.save(
+            session,
+            session_id=plan.session_id,
+            inn=pack["inn"],
+            analysis_type=plan.role_preset,
+            verdict=baseline["verdict"],
+            summary=baseline["summary"],
+            report=pack,
+            analysis=baseline["analysis"],
+        )
 
 
 def _turn_messages(session: Session, session_id: UUID) -> list[Message]:
@@ -560,7 +704,13 @@ def _sets_notice(sets: prefetch.Prefetched, window: context.Window) -> str | Non
     if window.dropped_sets:
         labels = ", ".join(prefetch.LABELS.get(name, name) for name in window.dropped_sets)
         budget = f"Не поместились в контекст хода: {labels} — отметьте их следующим сообщением по одному."
-    return _join(sets.notice, budget)
+    focused = None
+    if window.dropped_extra_blocks:
+        labels = ", ".join(
+            prefetch.LABELS.get(name, name) for name in window.dropped_extra_blocks
+        )
+        focused = f"Не поместились углублённые разборы: {labels}."
+    return _join(sets.notice, budget, focused)
 
 
 def _join(*parts: str | None) -> str | None:
@@ -643,3 +793,106 @@ def _compare_text(payload: dict[str, Any], decisions: list[dict[str, Any]]) -> s
     # §1.4: сводного вывода «работайте с этим» не даёт ни код, ни модель.
     lines.append("Решение остаётся за вами: инструмент показывает различия, а не выбирает контрагента.")
     return "\n".join(lines)
+
+
+def _tool_rounds(profile: ExecutionProfile, scenario: str) -> int:
+    if profile.attach_tools:
+        return profile.max_iterations
+    if scenario == agent_router.CLARIFY:
+        return BASIC_CLARIFY_ROUNDS
+    return 0
+
+
+def _configure_tools(session: Session, plan: _Plan, extra_inns: tuple[str, ...]) -> None:
+    plan.tool_rounds = _tool_rounds(plan.profile, plan.scenario)
+    if plan.tool_rounds:
+        if plan.profile.attach_tools:
+            plan.tool_names = toolsets.resolve(plan.role_preset, plan.message)
+        else:
+            # Базовое уточнение получает только прямые безопасные инструменты.
+            # load_tools потребовал бы ещё двух LLM-шагов (загрузка → вызов →
+            # ответ), а run_focused_analysis запрещён границей профиля.
+            plan.tool_names = [
+                name
+                for name in toolsets.CORE
+                if name not in {"load_tools", "run_focused_analysis"}
+            ]
+    inns = set(extra_inns)
+    inns.update(inn_module.extract(plan.message))
+    for analysis, _contractor in analyses_repository.list_for_session(session, plan.session_id):
+        inns.add(analysis.inn)
+    inns.update(history_repository.allowed_inns(session, plan.session_id))
+    plan.allowed_inns = tuple(inns)
+
+
+def _tools_scope(plan: _Plan) -> str | None:
+    if plan.tool_rounds <= 0:
+        return None
+    names = set(plan.tool_names)
+    core = set(toolsets.CORE)
+    if names <= core:
+        return "core"
+    if any(names <= core | set(area_names) for area_names in toolsets.AREAS.values()):
+        return "role"
+    # Роль и ключевые слова могут одновременно открыть несколько областей.
+    # Для такой комбинации отдельной замеренной константы нет — резервируем
+    # безопасную верхнюю границу полного каталога.
+    return "all"
+
+
+def _focused_blocks(inn: str, plan: _Plan) -> dict[str, Any]:
+    if not plan.profile.allow_subagents:
+        return {}
+    names = list(BUILDERS) if plan.role_preset not in BUILDERS else [plan.role_preset]
+    return {name: run_focused_analysis(inn, name) for name in names}
+
+
+async def _apply_tool_calls(
+    messages: list[dict],
+    event: llm.ToolCalls,
+    allowed: set[str],
+    loaded: tuple[str, ...],
+    plan: _Plan,
+    permitted: set[str],
+) -> tuple[list[dict], set[str], tuple[str, ...], list[str]]:
+    assistant_calls = []
+    tool_messages = []
+    current_loaded = loaded
+    current_allowed = set(allowed)
+    for call in event.calls:
+        arguments = dispatcher.parse_arguments(call.get("arguments"))
+        payload, harvested, current_loaded = await anyio.to_thread.run_sync(
+            lambda: dispatcher.dispatch(
+                call.get("name") or "",
+                arguments,
+                current_allowed,
+                current_loaded,
+                permitted,
+            )
+        )
+        current_allowed |= harvested
+        call_id = call.get("id") or call.get("name") or "call"
+        assistant_calls.append(
+            {
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": call.get("name") or "",
+                    "arguments": json.dumps(arguments, ensure_ascii=False),
+                },
+            }
+        )
+        tool_messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": call_id,
+                "content": json.dumps(payload, ensure_ascii=False, default=str),
+            }
+        )
+    names = toolsets.resolve(plan.role_preset, plan.message, current_loaded)
+    updated = [
+        *messages,
+        {"role": "assistant", "content": event.content, "tool_calls": assistant_calls},
+        *tool_messages,
+    ]
+    return updated, current_allowed, current_loaded, names

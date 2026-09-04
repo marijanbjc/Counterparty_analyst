@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from src.core.roles import DEFAULT_ROLE, ROLE_CHAPTERS
 
@@ -64,6 +64,14 @@ class MessageResponse(BaseModel):
     tokens: int | None
     meta: dict | None
     created_at: datetime
+
+    @field_validator("meta", mode="before")
+    @classmethod
+    def hide_private_meta(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        public = {key: item for key, item in value.items() if not str(key).startswith("_")}
+        return public or None
 
 
 class MessagePage(BaseModel):

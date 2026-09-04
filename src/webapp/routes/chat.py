@@ -1,4 +1,6 @@
+import asyncio
 import json
+import logging
 from collections.abc import AsyncIterator
 from uuid import UUID
 
@@ -10,8 +12,10 @@ from src.webapp.dependencies import CurrentUser
 from src.webapp.schemas import ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/api", tags=["chat"])
+logger = logging.getLogger(__name__)
 
 SSE_MEDIA_TYPE = "text/event-stream"
+SSE_HEARTBEAT_SECONDS = 15.0
 # Буферизующий прокси съедает весь смысл потока, поэтому просим его не буферизовать.
 SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
@@ -55,21 +59,48 @@ def _sse(name: str, data: dict) -> str:
 
 
 async def _events(payload: ChatRequest, user_id: UUID, request: Request) -> AsyncIterator[str]:
-    try:
-        async for event in _turn(payload, user_id):
+    queue: asyncio.Queue[pipeline.TurnEvent | pipeline.TurnError | None] = asyncio.Queue()
+
+    async def produce() -> None:
+        try:
+            async for event in _turn(payload, user_id):
+                queue.put_nowait(event)
+        except pipeline.TurnError as error:
+            queue.put_nowait(error)
+        except Exception:
+            logger.exception("Unhandled agent turn failure", extra={"session_id": str(payload.session_id)})
+            queue.put_nowait(pipeline.Error("Внутренняя ошибка хода.", degraded=False))
+        finally:
+            queue.put_nowait(None)
+
+    # StreamingResponse отменяет итератор при разрыве соединения. Сам ход живёт
+    # отдельной задачей приложения, поэтому продолжает расчёт и коммит даже если
+    # браузер нажал Stop. Сильная ссылка в app.state не даёт asyncio собрать задачу.
+    tasks: set[asyncio.Task] = getattr(request.app.state, "agent_turn_tasks", set())
+    request.app.state.agent_turn_tasks = tasks
+    task = asyncio.create_task(produce(), name=f"agent-turn-{payload.session_id}")
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+
+    while True:
+        try:
+            event = await asyncio.wait_for(queue.get(), timeout=SSE_HEARTBEAT_SECONDS)
+        except TimeoutError:
             if await request.is_disconnected():
-                # Клиент ушёл: события больше некому слать, но ход досчитывается —
-                # квота уже списана, и ответ должен найтись при возврате в сессию.
-                continue
-            if isinstance(event, pipeline.Stage):
-                yield _sse("stage", {"name": event.name})
-            elif isinstance(event, pipeline.Delta):
-                yield _sse("delta", {"text": event.text})
-            elif isinstance(event, pipeline.Error):
-                yield _sse("error", {"detail": event.detail, "degraded": event.degraded})
-            else:
-                yield _sse("done", ChatResponse(**event.payload).model_dump(mode="json"))
-    except pipeline.TurnError as error:
-        # Статус ответа уже отправлен, поэтому ошибка ввода уезжает событием,
-        # а не HTTP-кодом, как у блокирующего маршрута.
-        yield _sse("error", {"detail": error.detail, "degraded": False})
+                return
+            yield ": keep-alive\n\n"
+            continue
+        if event is None:
+            return
+        if await request.is_disconnected():
+            return
+        if isinstance(event, pipeline.TurnError):
+            yield _sse("error", {"detail": event.detail, "degraded": False})
+        elif isinstance(event, pipeline.Stage):
+            yield _sse("stage", {"name": event.name})
+        elif isinstance(event, pipeline.Delta):
+            yield _sse("delta", {"text": event.text})
+        elif isinstance(event, pipeline.Error):
+            yield _sse("error", {"detail": event.detail, "degraded": event.degraded})
+        else:
+            yield _sse("done", ChatResponse(**event.payload).model_dump(mode="json"))

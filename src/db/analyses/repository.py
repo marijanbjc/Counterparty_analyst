@@ -28,11 +28,15 @@ def save(
     item.analysis = analysis
     session.flush()
 
+    link_to_session(session, session_id, item)
+    return item
+
+
+def link_to_session(session: Session, session_id: UUID, item: Analysis) -> None:
     link = session.get(SessionAnalysis, (session_id, item.id))
     if link is None:
         session.add(SessionAnalysis(session_id=session_id, analysis_id=item.id))
-    session.flush()
-    return item
+        session.flush()
 
 
 def get(session: Session, inn: str, analysis_type: str | None = None) -> Analysis | None:

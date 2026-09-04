@@ -146,6 +146,11 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
     return pack
 
 
-def build_many(session: Session, inns: list[str], role: str | None = None) -> list[dict]:
-    packs = [build(session, inn, mode=SLIM, role=role) for inn in inns]
+def build_many(
+    session: Session,
+    inns: list[str],
+    role: str | None = None,
+    mode: str = SLIM,
+) -> list[dict]:
+    packs = [build(session, inn, mode=mode, role=role) for inn in inns]
     return [pack for pack in packs if pack]

@@ -67,9 +67,44 @@ REPLY_SCHEMA = _schema(REPLY_KEYS)
 REPORT_SCHEMA = _schema(REPORT_KEYS)
 
 
-def system(keys: tuple[str, ...]) -> str:
+TOOLS_RULES = """Доступны инструменты. Если для ответа не хватает цифр — вызови инструмент, не выдумывай.
+ИНН бери только из сообщения пользователя, якоря сессии или ответа инструмента.
+Не вызывай инструменты, если нужные данные уже есть в контексте."""
+
+ROLE_RULES = {
+    "general": "Фокус ответа: общий сбалансированный обзор без приоритета одного раздела.",
+    "finance": (
+        "Фокус ответа: финансы — динамика, обязательства и уже рассчитанные коэффициенты. "
+        "Не вычисляй новые показатели самостоятельно."
+    ),
+    "legal": (
+        "Фокус ответа: юридические риски. Чётко разделяй действующие взыскания, "
+        "историю исполнительных производств и агрегаты арбитража."
+    ),
+    "security": (
+        "Фокус ответа: безопасность — статус ЕГРЮЛ, флаги ФНС, собственники "
+        "и связи. Не делай выводов сверх переданных данных."
+    ),
+    "activity": (
+        "Фокус ответа: деятельность — ОКВЭД, лицензии, проверки и закупки. "
+        "Отсутствие данных не трактуй как отсутствие деятельности."
+    ),
+}
+
+FOCUSED_HEADER = (
+    "Ниже — углублённые разборы по направлениям, посчитанные кодом. "
+    "Тезисы уже готовы, пересчитывать их и вызывать run_focused_analysis повторно не нужно."
+)
+
+
+def system(keys: tuple[str, ...], role: str = "general", with_tools: bool = False) -> str:
     shape = _REPORT_SHAPE if len(keys) > 1 else _REPLY_SHAPE
-    return f"{RULES}\n\n{_FORMAT.format(keys=', '.join(keys))}\n{shape}"
+    parts = [RULES, ROLE_RULES.get(role, ROLE_RULES["general"])]
+    if with_tools:
+        parts.append(TOOLS_RULES)
+    parts.append(_FORMAT.format(keys=", ".join(keys)))
+    parts.append(shape)
+    return "\n\n".join(parts)
 
 
 # Наборы приходят из кнопок, а не из базового пакета, и модель обязана видеть
@@ -110,11 +145,16 @@ def compare_block(message: str, verdicts: list[dict[str, Any]], payload: dict[st
     return "\n".join(lines)
 
 
-def clarify_block(message: str) -> str:
+def clarify_block(message: str, with_tools: bool = False) -> str:
+    extra = (
+        "Если нужных цифр в контексте нет — вызови инструмент, не выдумывай."
+        if with_tools
+        else "Если для ответа нужных данных в контексте нет — так и скажи и попроси ИНН."
+    )
     return (
         f"Вопрос пользователя: {message}\n"
         "Отвечай по разобранному в этой сессии. Нового отчёта не делай. "
-        "Если для ответа нужных данных в контексте нет — так и скажи и попроси ИНН."
+        + extra
     )
 
 

@@ -1,6 +1,8 @@
 import asyncio
 import time
 from collections import deque
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import lru_cache
 
 WINDOW_SECONDS = 60.0
@@ -17,6 +19,17 @@ class TokenRateLimiter:
         self._window: deque[list[float]] = deque()
         self._pending: deque[list[float]] = deque()
         self._lock = asyncio.Lock()
+        self._call_lock = asyncio.Lock()
+
+    @asynccontextmanager
+    async def serialized_call(self) -> AsyncIterator[None]:
+        """Не даёт ответам завершиться не в порядке резервов.
+
+        Иначе FIFO в record() сопоставит usage чужой оценке, а суммарное окно
+        начнёт дрейфовать на границе минуты.
+        """
+        async with self._call_lock:
+            yield
 
     async def reserve(self, estimated_tokens: int) -> None:
         # Лок держится и во время ожидания: иначе параллельные ходы вместе пробьют лимит.
