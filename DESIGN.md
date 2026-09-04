@@ -27,12 +27,36 @@ typography:
     fontWeight: 700
     lineHeight: 1.1
     letterSpacing: "-0.04em"
+  headline-sm:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "30px"
+    fontWeight: 700
+    lineHeight: 1.15
+    letterSpacing: "-0.04em"
   title:
     fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
     fontSize: "21px"
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "-0.025em"
+  lead:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "19px"
+    fontWeight: 400
+    lineHeight: 1.45
+    letterSpacing: "normal"
+  subtitle:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "18px"
+    fontWeight: 700
+    lineHeight: 1.25
+    letterSpacing: "-0.02em"
+  body-lg:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.5
+    letterSpacing: "normal"
   body:
     fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
     fontSize: "13px"
@@ -58,6 +82,7 @@ typography:
     lineHeight: 1.2
     letterSpacing: "0.08em"
 rounded:
+  bubble-tail: "2px"
   status: "4px"
   compact: "5px"
   control: "9px"
@@ -151,9 +176,13 @@ AI-проверка выглядит не как отдельный продук
 
 ### Hierarchy
 - **Display** (700, clamp 52–96px, -0.055em): единственное место — обложка входа; на mobile 46px. Внутри рабочего интерфейса не применяется.
-- **Headline** (700, 34px, 1.1): заголовок раздела; на mobile уменьшается до 29px. Приветствие в чате использует облегчённый вариант 30px.
+- **Headline** (700, 34px, 1.1): заголовок раздела; на mobile уменьшается до 29px.
+- **Headline-sm** (700, 30px): приветствие в чате — тот же ярус, но внутри панели, а не на странице.
 - **Title** (700, 21px, 1.2): заголовки поиска, отчётов и компании в досье.
-- **Body** (400, 13px, 1.6): сообщения и объяснения; крупный поясняющий текст может достигать 14–19px.
+- **Lead** (400, 19px, 1.45): вводный абзац обложки входа.
+- **Subtitle** (700, 18px, 1.25): заголовок панели ИИ-проверки и словесный знак в мобильной шапке.
+- **Body-lg** (400, 14px, 1.5): крупный поясняющий текст и мобильные варианты Lead и Subtitle.
+- **Body** (400, 13px, 1.6): сообщения и объяснения.
 - **Caption** (400, 12px, 1.4): подписи в отчёте, пояснения под полями, вторичные строки списков; допускается 11px там, где строка обязана уместиться в одну.
 - **Micro** (400, 10px, 1.35): даты сессий, счётчики, служебные пометки в плотных списках.
 - **Label** (700, 9px, 0.08em, uppercase): заголовки таблицы, секции истории и служебные статусы.
