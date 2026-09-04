@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
 
 from src.core.roles import DEFAULT_ROLE, ROLE_CHAPTERS
 
@@ -65,6 +65,14 @@ class MessageResponse(BaseModel):
     meta: dict | None
     created_at: datetime
 
+    @field_validator("meta", mode="before")
+    @classmethod
+    def hide_private_meta(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        public = {key: item for key, item in value.items() if not str(key).startswith("_")}
+        return public or None
+
 
 class MessagePage(BaseModel):
     items: list[MessageResponse]
@@ -82,19 +90,24 @@ class ChatRequest(BaseModel):
     session_id: UUID
     message: str = Field(min_length=1)
     role_preset: RolePreset | None = None
+    # Потолок наборов кнопок — свойство профиля (§8), здесь стоит абсолютный предел
+    # схемы: он ограничивает размер запроса, а не тариф.
+    buttons: list[str] = Field(default_factory=list, max_length=6)
 
 
 class ChatResponse(BaseModel):
+    # Одна схема на все четыре сценария: у переспроса, отказа по квоте и сравнения
+    # разбора не существует, поэтому поля отчёта необязательны (§1.5).
     answer: str
-    verdict: str
-    summary: str
-    analysis: str
-    report: dict
-    contractor: dict
+    verdict: str | None = None
+    summary: str | None = None
+    analysis: str | None = None
+    report: dict | None = None
+    contractor: dict | None = None
     session: SessionResponse
     messages: list[MessageResponse]
-    degraded: bool = True
-    notice: str
+    degraded: bool = False
+    notice: str | None = None
 
 
 class CompareRequest(BaseModel):
@@ -127,6 +140,8 @@ class ProfileResponse(BaseModel):
     login: str
     display_name: str | None
     tariff: str
+    tariff_label: str
+    profile: str
     requests_used: int
     requests_limit: int
     reports_generated: int

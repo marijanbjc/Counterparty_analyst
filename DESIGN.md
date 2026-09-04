@@ -8,18 +8,63 @@ colors:
   banking-navy: "#202a34"
   banking-navy-soft: "#303b46"
   muted: "#687482"
+  muted-inverse: "#aeb7bf"
+  info: "#1687f8"
   divider: "#dfe3e7"
   canvas: "#f3f4f5"
   surface: "#ffffff"
   control: "#eef0f2"
   positive: "#138a50"
   warning: "#ad6700"
+  positive-ink: "#08783f"
+  positive-bg: "#dcf4e5"
+  warning-ink: "#935800"
+  warning-bg: "#ffefce"
+  warning-ink-deep: "#70480b"
+  warning-bg-soft: "#fff5df"
+  danger-ink: "#aa2018"
+  danger-bg: "#ffe3e1"
+  error-ink: "#9e1710"
+  error-bg: "#fff0ef"
+  neutral-ink: "#596572"
+  neutral-bg: "#e9ecef"
+  on-navy: "#c8cfd5"
+  on-navy-soft: "#9aa4ad"
+  on-navy-dim: "#8f9aa4"
+  on-navy-text: "#c5cbd0"
+  navy-line: "#44515d"
+  surface-tint: "#f7f8f8"
+  scrollbar: "#aab1b8"
 typography:
+  display:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "clamp(52px, 6vw, 96px)"
+    fontWeight: 700
+    lineHeight: 1.0
+    letterSpacing: "-0.055em"
   headline:
     fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
     fontSize: "34px"
     fontWeight: 700
     lineHeight: 1.1
+    letterSpacing: "-0.04em"
+  headline-sm:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "30px"
+    fontWeight: 700
+    lineHeight: 1.15
+    letterSpacing: "-0.04em"
+  display-mobile:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "46px"
+    fontWeight: 700
+    lineHeight: 1.0
+    letterSpacing: "-0.055em"
+  headline-mobile:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "29px"
+    fontWeight: 700
+    lineHeight: 1.15
     letterSpacing: "-0.04em"
   title:
     fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
@@ -27,11 +72,47 @@ typography:
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "-0.025em"
+  lead:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "19px"
+    fontWeight: 400
+    lineHeight: 1.45
+    letterSpacing: "normal"
+  subtitle:
+    fontFamily: "\"Onest Variable\", \"Segoe UI Variable\", sans-serif"
+    fontSize: "18px"
+    fontWeight: 700
+    lineHeight: 1.25
+    letterSpacing: "-0.02em"
+  body-lg:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "14px"
+    fontWeight: 400
+    lineHeight: 1.5
+    letterSpacing: "normal"
   body:
     fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
     fontSize: "13px"
     fontWeight: 400
     lineHeight: 1.6
+    letterSpacing: "normal"
+  caption:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "12px"
+    fontWeight: 400
+    lineHeight: 1.4
+    letterSpacing: "normal"
+  caption-sm:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
+    lineHeight: 1.35
+    letterSpacing: "normal"
+  micro:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "10px"
+    fontWeight: 400
+    lineHeight: 1.35
     letterSpacing: "normal"
   label:
     fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
@@ -39,7 +120,14 @@ typography:
     fontWeight: 700
     lineHeight: 1.2
     letterSpacing: "0.08em"
+  badge:
+    fontFamily: "\"Segoe UI Variable\", \"Segoe UI\", sans-serif"
+    fontSize: "8px"
+    fontWeight: 800
+    lineHeight: 1.1
+    letterSpacing: "normal"
 rounded:
+  bubble-tail: "2px"
   status: "4px"
   compact: "5px"
   control: "9px"
@@ -119,6 +207,25 @@ AI-проверка выглядит не как отдельный продук
 - **Фон контролов:** фильтры, пользовательские сообщения и empty states.
 - **Разделитель:** границы панелей, строк и колонок.
 
+### Tonal Ramps
+Семантические цвета живут парами: тёмный тон для текста, светлый для подложки. Пара
+рассчитана на контраст в плашке, а не на самостоятельное применение.
+
+- **positive-ink / positive-bg**, **warning-ink / warning-bg**, **danger-ink / danger-bg**,
+  **neutral-ink / neutral-bg** — светофор надёжности контрагента. Это ядро продукта,
+  а не украшение: цвет здесь несёт оценку риска и произвольной замене не подлежит.
+- **warning-ink-deep / warning-bg-soft** — предупреждение во всю ширину отчёта, где
+  крупная заливка требует тона мягче плашечного.
+- **error-ink / error-bg** — ошибки форм и чата.
+
+### On Navy
+Приглушённые тона для тёмного rail: обычный **Приглушённый** на тёмно-синем не читается.
+**on-navy** — активные пункты, **on-navy-text** — абзацы обложки входа, **on-navy-soft**
+и **on-navy-dim** — подписи и сноски, **navy-line** — границы на тёмном.
+
+**surface-tint** — подложка на полтона светлее холста: разделяет панели без линии.
+**scrollbar** — полоса прокрутки.
+
 ### Named Rules
 **The Bank Owns the Frame Rule.** Тёмно-синий rail и прохладный холст всегда показывают, что AI-сервис находится внутри Альфа-Бизнеса.
 
@@ -132,10 +239,26 @@ AI-проверка выглядит не как отдельный продук
 **Character:** Onest делает заголовки плотными и узнаваемыми, а Segoe UI Variable сохраняет нейтральную банковскую читаемость в навигации, таблицах, чате и досье.
 
 ### Hierarchy
-- **Headline** (700, 34px, 1.1): заголовок раздела; на mobile уменьшается до 29px.
+- **Display** (700, clamp 52–96px, -0.055em): единственное место — обложка входа. Внутри рабочего интерфейса не применяется.
+- **Display-mobile** (700, 46px): та же обложка на узком экране.
+- **Headline** (700, 34px, 1.1): заголовок раздела.
+- **Headline-mobile** (700, 29px): он же на узком экране.
+- **Headline-sm** (700, 30px): приветствие в чате — тот же ярус, но внутри панели, а не на странице.
 - **Title** (700, 21px, 1.2): заголовки поиска, отчётов и компании в досье.
-- **Body** (400, 13px, 1.6): сообщения и объяснения; крупный поясняющий текст может достигать 14–19px.
+- **Lead** (400, 19px, 1.45): вводный абзац обложки входа.
+- **Subtitle** (700, 18px, 1.25): заголовок панели ИИ-проверки и словесный знак в мобильной шапке.
+- **Body-lg** (400, 14px, 1.5): крупный поясняющий текст и мобильные варианты Lead и Subtitle.
+- **Body** (400, 13px, 1.6): сообщения и объяснения.
+- **Caption** (400, 12px, 1.4): подписи в отчёте, пояснения под полями, вторичные строки списков.
+- **Caption-sm** (400, 11px, 1.35): то же там, где строка обязана уместиться в одну.
+- **Micro** (400, 10px, 1.35): даты сессий, счётчики, служебные пометки в плотных списках.
 - **Label** (700, 9px, 0.08em, uppercase): заголовки таблицы, секции истории и служебные статусы.
+- **Badge** (800, 8px): счётчик в навигации и лента «НОВОЕ». Плашка на цветной подложке — единственное место ниже Label, и текста в ней не больше слова.
+
+Ярусы Caption и Micro — не исключения, а рабочая часть плотного банковского
+интерфейса: боковая панель, история проверок и таблицы отчёта на них держатся.
+Подъём их до Body раздувает панели и ломает плотность, ради которой шкала
+и строилась.
 
 ### Named Rules
 **The Compact Banking Type Rule.** Рабочие подписи остаются малыми и плотными, но основной текст не опускается ниже читаемого размера и получает увеличенный line-height.

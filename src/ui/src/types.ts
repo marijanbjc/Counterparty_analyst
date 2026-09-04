@@ -1,4 +1,7 @@
-export type RolePreset = 'finance' | 'legal' | 'security' | 'general'
+export type RolePreset = 'finance' | 'legal' | 'security' | 'activity' | 'general'
+
+// Роль — свойство сессии, набор — разовое действие на один ход (§7.4).
+export type DataSet = 'finance' | 'legal' | 'security' | 'activity' | 'followups' | 'charts'
 
 export type AuthState = {
   token: string
@@ -18,7 +21,7 @@ export type Message = {
   session_id: string
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
-  meta: { inn?: string; report?: FactPack; degraded?: boolean } | null
+  meta: { inn?: string | null; scenario?: string; report?: FactPack; degraded?: boolean } | null
   created_at: string
 }
 
@@ -67,9 +70,17 @@ export type FactPack = {
     total_amount: number | null
     active_amount: number | null
   }
+  legal_status: {
+    status: string | null
+    status_date: string | null
+    status_reason: string | null
+    reason_code: string
+    severity: 'critical' | 'attention' | 'none'
+  }
   risk_factors: {
     negative: Array<{ code: string | null; chapter: string | null; name?: string | null }>
-    positive: Array<{ code: string | null; chapter: string | null; name?: string | null }>
+    // в режиме slim позитивных факторов и связанных компаний в пакете нет
+    positive?: Array<{ code: string | null; chapter: string | null; name?: string | null }>
     negative_total: number
   }
   discrepancies: Array<{ code: string; text: string }>
@@ -82,23 +93,26 @@ export type FactPack = {
   missing_data: string[]
 }
 
+// Переспрос, отказ по квоте и сравнение отчёта не создают — полей разбора у них нет.
 export type ChatResponse = {
   session: Session
   messages: Message[]
   answer: string
-  verdict: string
-  summary: string
-  analysis: string
-  report: FactPack
-  contractor: { inn: string; short_name: string }
+  verdict: string | null
+  summary: string | null
+  analysis: string | null
+  report: FactPack | null
+  contractor: { inn: string; short_name: string } | null
   degraded: boolean
-  notice: string
+  notice: string | null
 }
 
 export type Profile = {
   login: string
   display_name: string | null
   tariff: string
+  tariff_label: string
+  profile: string
   requests_used: number
   requests_limit: number
   reports_generated: number

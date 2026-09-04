@@ -182,6 +182,7 @@ class User(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     login: Mapped[str] = mapped_column(Text, unique=True)
     display_name: Mapped[str | None] = mapped_column(Text)
+    tariff: Mapped[str] = mapped_column(Text, default="free")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

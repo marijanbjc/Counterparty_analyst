@@ -18,6 +18,10 @@ def build_chart(target: str | list[str], chart_type: str, metric: str = "revenue
     в ряду — они отображаются разрывом, а не нулём."""
     if chart_type not in charts.CHART_TYPES:
         return _bad_request(f"Допустимые chart_type: {', '.join(charts.CHART_TYPES)}.")
+    if isinstance(target, list) and not target:
+        return _bad_request("Укажите хотя бы один ИНН в target.")
+    if isinstance(target, str) and not target.strip():
+        return _bad_request("Укажите ИНН в target.")
 
     if chart_type == "compare_metric":
         inns = target if isinstance(target, list) else [target]

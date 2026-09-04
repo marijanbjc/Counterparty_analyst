@@ -130,9 +130,13 @@ function App() {
     setActiveSession(updated)
   }
 
-  const applyChat = (saved: Message[], pack: FactPack, session: Session) => {
+  const applyChat = (saved: Message[], pack: FactPack | null, session: Session) => {
+    // Защита второго уровня: поздний done старого SSE не должен менять
+    // историю уже открытой сессии.
+    if (activeSession?.id !== session.id) return
     setMessages((items) => [...items, ...saved])
-    setCurrentPack(pack)
+    // Переспрос и сравнение отчёта не приносят — ранее открытый оставляем на месте.
+    if (pack) setCurrentPack(pack)
     updateSession(session)
   }
 

@@ -1,78 +1,106 @@
-from fastapi import APIRouter, HTTPException, status
+import asyncio
+import json
+import logging
+from collections.abc import AsyncIterator
+from uuid import UUID
 
-from src.core import factpack
-from src.core import inn as inn_module
-from src.core import report as report_builder
-from src.db.analyses import repository as analyses_repository
-from src.db.client import repository as client_repository
-from src.db.history import repository as history_repository
-from src.webapp.dependencies import CurrentUser, DbSession
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
+
+from src.agent import pipeline
+from src.webapp.dependencies import CurrentUser
 from src.webapp.schemas import ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/api", tags=["chat"])
+logger = logging.getLogger(__name__)
+
+SSE_MEDIA_TYPE = "text/event-stream"
+SSE_HEARTBEAT_SECONDS = 15.0
+# Буферизующий прокси съедает весь смысл потока, поэтому просим его не буферизовать.
+SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
 @router.post("/chat", response_model=ChatResponse)
-def chat(payload: ChatRequest, session: DbSession, user: CurrentUser) -> ChatResponse:
-    chat_session = client_repository.get_session(session, payload.session_id, user_id=user.id)
-    if chat_session is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Сессия не найдена.")
+async def chat(payload: ChatRequest, user: CurrentUser) -> ChatResponse:
+    """Блокирующий ход: тот же конвейер, просто дочитанный до конца (§13.3).
 
-    if payload.role_preset and payload.role_preset != chat_session.role_preset:
-        client_repository.update_session_role(session, chat_session, payload.role_preset)
+    Сессию БД маршрут не открывает: обе фазы конвейера берут свою, потому что
+    у стримящего маршрута сессия запроса закрывается до старта генератора (§13.5).
+    """
+    try:
+        async for event in _turn(payload, user.id):
+            if isinstance(event, pipeline.Done):
+                return ChatResponse(**event.payload)
+    except pipeline.TurnError as error:
+        raise HTTPException(error.status_code, detail=error.detail) from error
+    raise HTTPException(500, detail="Ход не вернул результат.")
 
-    inns = inn_module.extract(payload.message)
-    if not inns:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Укажите в сообщении ИНН организации (10 цифр) или ИП (12 цифр).",
-        )
-    if len(inns) > 1:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Для нескольких ИНН используйте режим сравнения.",
-        )
 
-    pack = factpack.build(session, inns[0], mode=factpack.FULL, role=chat_session.role_preset)
-    if pack is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            detail="Контрагента с таким ИНН в базе нет.",
-        )
-
-    result = report_builder.build(pack)
-    answer = f"{result['summary']}\n\n{result['analysis']}"
-    question = history_repository.add_message(
-        session,
-        session_id=chat_session.id,
-        role="user",
-        content=payload.message,
+@router.post("/chat/stream")
+async def chat_stream(
+    payload: ChatRequest, user: CurrentUser, request: Request
+) -> StreamingResponse:
+    """Тот же ход, но событиями SSE: stage, delta, done, error (§13.4)."""
+    return StreamingResponse(
+        _events(payload, user.id, request),
+        media_type=SSE_MEDIA_TYPE,
+        headers=SSE_HEADERS,
     )
-    # факт-пакет в историю не кладём: он живёт в analyses, а окно контекста его вырезает
-    reply = history_repository.add_message(
-        session,
-        session_id=chat_session.id,
-        role="assistant",
-        content=answer,
-        meta={"inn": pack["inn"], "degraded": True},
-    )
-    client_repository.set_session_title(session, chat_session, pack["short_name"])
-    analyses_repository.save(
-        session,
-        session_id=chat_session.id,
-        inn=pack["inn"],
-        analysis_type=chat_session.role_preset,
-        verdict=result["verdict"],
-        summary=result["summary"],
-        report=result["report"],
-        analysis=result["analysis"],
-    )
-    client_repository.record_request(session, user.id, report_generated=True)
 
-    return ChatResponse(
-        answer=answer,
-        contractor={"inn": pack["inn"], "short_name": pack["short_name"]},
-        session=chat_session,
-        messages=[question, reply],
-        **result,
+
+def _turn(payload: ChatRequest, user_id: UUID) -> AsyncIterator[pipeline.TurnEvent]:
+    return pipeline.run_turn(
+        payload.session_id, user_id, payload.message, payload.buttons, payload.role_preset
     )
+
+
+def _sse(name: str, data: dict) -> str:
+    return f"event: {name}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
+
+
+async def _events(payload: ChatRequest, user_id: UUID, request: Request) -> AsyncIterator[str]:
+    queue: asyncio.Queue[pipeline.TurnEvent | pipeline.TurnError | None] = asyncio.Queue()
+
+    async def produce() -> None:
+        try:
+            async for event in _turn(payload, user_id):
+                queue.put_nowait(event)
+        except pipeline.TurnError as error:
+            queue.put_nowait(error)
+        except Exception:
+            logger.exception("Unhandled agent turn failure", extra={"session_id": str(payload.session_id)})
+            queue.put_nowait(pipeline.Error("Внутренняя ошибка хода.", degraded=False))
+        finally:
+            queue.put_nowait(None)
+
+    # StreamingResponse отменяет итератор при разрыве соединения. Сам ход живёт
+    # отдельной задачей приложения, поэтому продолжает расчёт и коммит даже если
+    # браузер нажал Stop. Сильная ссылка в app.state не даёт asyncio собрать задачу.
+    tasks: set[asyncio.Task] = getattr(request.app.state, "agent_turn_tasks", set())
+    request.app.state.agent_turn_tasks = tasks
+    task = asyncio.create_task(produce(), name=f"agent-turn-{payload.session_id}")
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+
+    while True:
+        try:
+            event = await asyncio.wait_for(queue.get(), timeout=SSE_HEARTBEAT_SECONDS)
+        except TimeoutError:
+            if await request.is_disconnected():
+                return
+            yield ": keep-alive\n\n"
+            continue
+        if event is None:
+            return
+        if await request.is_disconnected():
+            return
+        if isinstance(event, pipeline.TurnError):
+            yield _sse("error", {"detail": event.detail, "degraded": False})
+        elif isinstance(event, pipeline.Stage):
+            yield _sse("stage", {"name": event.name})
+        elif isinstance(event, pipeline.Delta):
+            yield _sse("delta", {"text": event.text})
+        elif isinstance(event, pipeline.Error):
+            yield _sse("error", {"detail": event.detail, "degraded": event.degraded})
+        else:
+            yield _sse("done", ChatResponse(**event.payload).model_dump(mode="json"))

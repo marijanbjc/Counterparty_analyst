@@ -1,6 +1,7 @@
 import type {
   ChatResponse,
   CompareResult,
+  DataSet,
   FactPack,
   MessagePage,
   Profile,
@@ -107,15 +108,113 @@ export const api = {
     return request<{ report: FactPack }>(`/api/sessions/${sessionId}/report`, {}, token)
   },
 
-  chat(token: string, sessionId: string, message: string, role_preset: RolePreset) {
+  chat(
+    token: string,
+    sessionId: string,
+    message: string,
+    role_preset: RolePreset,
+    buttons: DataSet[] = [],
+  ) {
     return request<ChatResponse>(
       '/api/chat',
       {
         method: 'POST',
-        body: JSON.stringify({ session_id: sessionId, message, role_preset }),
+        body: JSON.stringify({ session_id: sessionId, message, role_preset, buttons }),
       },
       token,
     )
+  },
+
+  async chatStream(
+    token: string,
+    sessionId: string,
+    message: string,
+    role_preset: RolePreset,
+    buttons: DataSet[] = [],
+    handlers: {
+      onStage?: (name: string) => void
+      onDelta?: (text: string) => void
+      onDone: (response: ChatResponse) => void
+      onError?: (detail: string, degraded: boolean) => void
+    },
+    signal?: AbortSignal,
+  ) {
+    const response = await fetch(`${API_URL}/api/chat/stream`, {
+      method: 'POST',
+      signal,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ session_id: sessionId, message, role_preset, buttons }),
+    })
+    if (!response.ok) {
+      let payload: unknown
+      try {
+        payload = await response.json()
+      } catch {
+        payload = null
+      }
+      throw new ApiError(errorText(payload), response.status)
+    }
+    if (!response.body) {
+      throw new ApiError('Поток ответа недоступен.', 502)
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let completed = false
+    let failed = false
+    let failureDetail = ''
+
+    const consume = (block: string) => {
+      const lines = block.split(/\r?\n/)
+      let eventName = 'message'
+      const data: string[] = []
+      for (const line of lines) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim()
+        else if (line.startsWith('data:')) data.push(line.slice(5).trimStart())
+      }
+      if (!data.length) return
+      let parsed: Record<string, unknown>
+      try {
+        parsed = JSON.parse(data.join('\n')) as Record<string, unknown>
+      } catch {
+        throw new ApiError('Сервер вернул повреждённое событие потока.', 502)
+      }
+      if (eventName === 'stage' && typeof parsed.name === 'string') handlers.onStage?.(parsed.name)
+      else if (eventName === 'delta' && typeof parsed.text === 'string') handlers.onDelta?.(parsed.text)
+      else if (eventName === 'error') {
+        failed = true
+        failureDetail = typeof parsed.detail === 'string' ? parsed.detail : 'Ошибка хода.'
+        handlers.onError?.(failureDetail, Boolean(parsed.degraded))
+      } else if (eventName === 'done') {
+        completed = true
+        handlers.onDone(parsed as ChatResponse)
+      }
+    }
+
+    try {
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const parts = buffer.split(/\r?\n\r?\n/)
+        buffer = parts.pop() ?? ''
+        for (const block of parts) consume(block)
+      }
+      buffer += decoder.decode()
+      if (buffer.trim()) consume(buffer)
+    } finally {
+      reader.releaseLock()
+    }
+    if (failed && !completed) {
+      throw new ApiError(failureDetail || 'Ошибка хода.', 422)
+    }
+    if (!completed) {
+      throw new ApiError('Поток оборвался до завершения хода.', 502)
+    }
   },
 
   contractor(token: string, inn: string, role: RolePreset) {

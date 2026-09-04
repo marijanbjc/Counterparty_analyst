@@ -15,6 +15,8 @@ llm_model: openai/gpt-oss-120b
 llm_api_key: ""
 llm_timeout_seconds: 60
 llm_max_retries: 2
+# Свойство ключа поставщика, не тарифа пользователя: меняется вместе с ключом.
+llm_tpm_limit: 8000
 
 auth_login: admin
 auth_password: ""
@@ -25,8 +27,12 @@ cors_origins:
   - http://localhost:5173
   - http://127.0.0.1:5173
 
-context_token_budget: 8000
+# Потолок ОДНОГО запроса, не минутный лимит: TPM живёт в llm_tpm_limit.
+context_token_budget: 30000
 context_anchor_max_contractors: 5
+# Сколько реплик поднимаем из БД перед обрезкой по бюджету. Обрезает окно бюджет,
+# а не это число: ключ ограничивает объём выборки, а не длину контекста.
+context_history_max_messages: 40
 
 risk_active_execproc_revenue_share: 0.05
 risk_active_execproc_absolute: 10000000
@@ -36,3 +42,25 @@ risk_many_execproc_threshold: 100
 
 zsk_mask_yellow_red: false
 llm_validator_enabled: false
+
+tariff_default: free
+tariff_free_requests_limit: 20
+tariff_paid_requests_limit: 500
+tariff_free_max_buttons: 2
+tariff_paid_max_buttons: 6
+tariff_free_max_compare: 3
+tariff_paid_max_compare: 10
+context_budget_share: 0.7
+
+# Замеры на живом API Groq, openai/gpt-oss-120b — agent_architecture.md §2.1.
+tokens_system_prompt: 110
+tokens_tools_core: 1817
+tokens_tools_role: 2826
+tokens_tools_all: 4586
+tokens_factpack_full: 3798
+tokens_factpack_slim: 2029
+tokens_chars_per_token: 2.5
+tokens_safety_margin: 1.15
+# Резервируется лимитером вместе с промптом: record() пишет prompt + completion,
+# и без этого слагаемого окно занижается на треть (§6.1). Замерено 516–1218 за ход.
+tokens_expected_completion: 1000
