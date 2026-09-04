@@ -14,7 +14,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from src.agent import tokens
+from src.agent import prompts, tokens
 from src.agent.profiles import ExecutionProfile
 from src.config.settings import get_settings
 from src.db.analyses import repository as analyses_repository
@@ -22,7 +22,6 @@ from src.db.history import repository as history_repository
 from src.db.models import Analysis, Contractor
 
 ANCHOR_HEADER = "[Разобрано в этой сессии]"
-SETS_HEADER = "Дочитанные наборы данных:"
 DIALOG_ROLES = frozenset({"user", "assistant"})
 
 _ZSK_LABELS = {"GREEN": "зелёный", "YELLOW": "жёлтый", "RED": "красный"}
@@ -67,10 +66,17 @@ def build(
             head.append({"role": "system", "content": text})
             spent += tokens.estimate(text)
 
-    kept, dropped = _fit_sets(_weigh(button_sets or {}), room=budget - spent)
+    # Рамка про дочитанные наборы платная и обязательная: без неё модель примет
+    # их за часть базового пакета. Резервируем её до отбора, иначе выжившие наборы
+    # займут бюджет ровно на её размер сверх посчитанного.
+    frame = tokens.estimate(prompts.SETS_HEADER) if button_sets else 0
+    kept, dropped = _fit_sets(_weigh(button_sets or {}), room=budget - spent - frame)
+    if not kept:
+        frame = 0  # все наборы ушли — рамку не печатаем, бюджет возвращается диалогу
     # Диалог берёт то, что осталось после наборов: §4 ставит наборы выше реплик,
     # то есть старые реплики выдавливаются в ноль раньше, чем уйдёт первый набор.
-    dialog = _dialog(session, session_id, room=budget - spent - sum(item.cost for item in kept))
+    spent += frame + sum(item.cost for item in kept)
+    dialog = _dialog(session, session_id, room=budget - spent)
     tail = {"role": "user", "content": _with_sets(user_block, kept)}
     return Window([*head, *dialog, tail], dropped)
 
@@ -100,7 +106,7 @@ def _with_sets(user_block: str, kept: list[_Set]) -> str:
     if not kept:
         return user_block
     ordered = sorted(kept, key=lambda item: item.order)
-    return "\n".join([user_block, SETS_HEADER, *(item.text for item in ordered)])
+    return "\n".join([user_block, prompts.SETS_HEADER, *(item.text for item in ordered)])
 
 
 def _serialize(name: str, payload: Any) -> str:
