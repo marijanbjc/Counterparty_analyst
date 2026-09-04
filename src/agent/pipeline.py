@@ -13,7 +13,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from src.agent import context, llm, prompts
+from src.agent import context, llm, prefetch, prompts
 from src.agent import router as agent_router
 from src.agent import tokens, verdicts
 from src.agent.profiles import ExecutionProfile, profile_for
@@ -71,8 +71,6 @@ async def run_turn(
     message: str,
     buttons: list[str] | None = None,
 ) -> dict[str, Any]:
-    # buttons принимаются, но пока не разбираются: наборы данных по кнопкам (§7)
-    # подключаются отдельным шагом, а контракт запроса нужен фронту уже сейчас.
     profile = profile_for(user.tariff)
     quota = client_repository.get_quota(session, user.id)
     last = analyses_repository.last_for_session(session, chat_session.id)
@@ -87,11 +85,11 @@ async def run_turn(
         raise TurnError(422, route.error)
 
     if route.scenario == agent_router.ANALYZE:
-        outcome = await _analyze(session, chat_session, route.inns[0], profile, message)
+        outcome = await _analyze(session, chat_session, route.inns[0], profile, message, buttons)
     elif route.scenario == agent_router.COMPARE:
         outcome = await _compare(session, chat_session, route.inns, profile, message)
     elif route.scenario == agent_router.CLARIFY:
-        outcome = await _clarify(session, chat_session, profile, message, last)
+        outcome = await _clarify(session, chat_session, profile, message, last, buttons)
     else:
         # Переспрос, отказ по квоте и превышение тарифного лимита сравнения —
         # штатные ответы за ноль токенов, а не деградация (§1.1).
@@ -101,7 +99,12 @@ async def run_turn(
 
 
 async def _analyze(
-    session: Session, chat: ChatSession, inn: str, profile: ExecutionProfile, message: str
+    session: Session,
+    chat: ChatSession,
+    inn: str,
+    profile: ExecutionProfile,
+    message: str,
+    buttons: list[str] | None = None,
 ) -> dict[str, Any]:
     pack = factpack.build(session, inn, mode=profile.factpack_mode, role=chat.role_preset)
     if pack is None:
@@ -112,7 +115,8 @@ async def _analyze(
     contractor = {"inn": pack["inn"], "short_name": pack["short_name"]}
     client_repository.set_session_title(session, chat, pack["short_name"])
 
-    messages = context.build(
+    sets = prefetch.collect(buttons or (), pack["inn"], profile.max_buttons)
+    window = context.build(
         session,
         chat.id,
         profile=profile,
@@ -121,10 +125,11 @@ async def _analyze(
         user_block_tokens=context.user_block_cost(message, profile.factpack_mode),
         # В разборе факт-пакет и так в контексте, якорь дублировал бы его (§4.1).
         with_anchor=False,
+        button_sets=sets.data,
     )
     settings = get_settings()
     try:
-        result = await _ask(messages, prompts.REPORT_SCHEMA, settings.tokens_expected_completion)
+        result = await _ask(window.messages, prompts.REPORT_SCHEMA, settings.tokens_expected_completion)
     except llm.LlmError as error:
         # Отчёт сохраняется и при отказе модели: иначе якорь останется пустым
         # и следующий вопрос без ИНН уйдёт в переспрос вместо уточнения (§1.2).
@@ -143,7 +148,7 @@ async def _analyze(
         "report": pack,
         "contractor": contractor,
         "degraded": False,
-        "notice": PARTIAL_NOTICE if result.problems else None,
+        "notice": _notice(sets, window, PARTIAL_NOTICE if result.problems else None),
         REPLY_TOKENS: _completion(result.usage, answer),
     }
 
@@ -166,7 +171,9 @@ async def _compare(
     baseline = _compare_text(payload, decisions)
 
     block = prompts.compare_block(message, decisions, payload)
-    messages = context.build(
+    # Наборы кнопок в сравнение не идут: кнопка висит на отчёте одного контрагента
+    # (§7.4), а здесь их несколько, и дочитывать набор непонятно по кому.
+    window = context.build(
         session,
         chat.id,
         profile=profile,
@@ -177,7 +184,7 @@ async def _compare(
     )
     settings = get_settings()
     try:
-        result = await _ask(messages, prompts.REPORT_SCHEMA, settings.tokens_expected_completion)
+        result = await _ask(window.messages, prompts.REPORT_SCHEMA, settings.tokens_expected_completion)
     except llm.LlmError as error:
         return {
             "answer": baseline,
@@ -207,7 +214,9 @@ async def _clarify(
     pack = last.report or {}
     contractor = {"inn": last.inn, "short_name": pack.get("short_name") or last.inn}
     block = prompts.clarify_block(message)
-    messages = context.build(
+    # Кнопки здесь игнорируются: набор висит на свежем разборе, а уточнение
+    # его не делает — дочитывать данные не к чему приложить.
+    window = context.build(
         session,
         chat.id,
         profile=profile,
@@ -218,7 +227,7 @@ async def _clarify(
     )
     expected = get_settings().tokens_expected_completion // CLARIFY_COMPLETION_DIVISOR
     try:
-        result = await _ask(messages, prompts.REPLY_SCHEMA, expected)
+        result = await _ask(window.messages, prompts.REPLY_SCHEMA, expected)
     except llm.LlmError as error:
         answer = (
             f"Отвечаю по последнему разбору — {contractor['short_name']} (ИНН {last.inn}).\n\n"
@@ -247,6 +256,7 @@ async def _clarify(
         "report": pack or None,
         "contractor": contractor,
         "degraded": False,
+        "notice": _notice(sets, window, None),
         REPLY_TOKENS: _completion(result.usage, answer),
     }
 
@@ -278,6 +288,8 @@ def _save(
 
 
 def _degraded(baseline: dict[str, Any], contractor: dict[str, str], detail: str) -> dict[str, Any]:
+    # Про наборы здесь молчим: модель не вызывалась, ни один набор в ход не пошёл,
+    # и разбирать причины их отсева пользователю сейчас незачем.
     answer = f"{baseline['summary']}\n\n{baseline['analysis']}"
     return {
         "answer": answer,
@@ -290,6 +302,23 @@ def _degraded(baseline: dict[str, Any], contractor: dict[str, str], detail: str)
         "notice": f"{detail} {DEGRADED_TAIL}",
         REPLY_TOKENS: tokens.estimate(answer),
     }
+
+
+def _notice(sets: prefetch.Prefetched, window: context.Window, base: str | None) -> str | None:
+    """Плашка хода: сначала о деле, потом о недочитанных наборах.
+
+    Причины отсева две и они разные. Потолок тарифа объясняет `Prefetched.notice`,
+    а бюджет окна — нет: сказать «на вашем тарифе» про набор, который срезала
+    длина запроса, значит назвать пользователю неверную причину.
+    """
+    parts = [base, sets.notice]
+    if window.dropped_sets:
+        labels = ", ".join(prefetch.LABELS.get(name, name) for name in window.dropped_sets)
+        parts.append(
+            f"Не поместились в контекст хода: {labels} — отметьте их следующим сообщением по одному."
+        )
+    joined = " ".join(part for part in parts if part)
+    return joined or None
 
 
 def _text(data: dict[str, Any], key: str) -> str | None:

@@ -3,9 +3,12 @@
 Десять последних сообщений — это от 200 до 20 000 токенов: среди них может оказаться
 развёрнутый отчёт. Поэтому окно режется по бюджету профиля, и режется строго в одном
 порядке: системный промпт, вердикт с факт-пакетом и якорь сессии не трогаются никогда,
-диалог уходит первым и с самых старых реплик.
+диалог уходит первым и с самых старых реплик, наборы кнопок — последними и по одному,
+начиная с самого дорогого.
 """
 
+import json
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -19,9 +22,26 @@ from src.db.history import repository as history_repository
 from src.db.models import Analysis, Contractor
 
 ANCHOR_HEADER = "[Разобрано в этой сессии]"
+SETS_HEADER = "Дочитанные наборы данных:"
 DIALOG_ROLES = frozenset({"user", "assistant"})
 
 _ZSK_LABELS = {"GREEN": "зелёный", "YELLOW": "жёлтый", "RED": "красный"}
+
+
+@dataclass(frozen=True)
+class Window:
+    messages: list[dict[str, str]]
+    # Наборы, не влезшие в бюджет. Проглотить их нельзя: дочитывание уже оплачено
+    # вызовом инструментов, и пользователь должен узнать, что данных в ответе нет.
+    dropped_sets: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _Set:
+    name: str
+    text: str
+    cost: int
+    order: int  # порядок запроса: взвешиваем по цене, а в промпт кладём как просили
 
 
 def build(
@@ -33,7 +53,8 @@ def build(
     user_block: str,
     user_block_tokens: int,
     with_anchor: bool,
-) -> list[dict[str, str]]:
+    button_sets: dict[str, Any] | None = None,
+) -> Window:
     budget = profile.budget_tokens
     head: list[dict[str, str]] = [{"role": "system", "content": system_text}]
     # Замеренная константа — нижняя граница: если текст промпта длиннее замера,
@@ -46,8 +67,44 @@ def build(
             head.append({"role": "system", "content": text})
             spent += tokens.estimate(text)
 
-    dialog = _dialog(session, session_id, room=budget - spent)
-    return [*head, *dialog, {"role": "user", "content": user_block}]
+    kept, dropped = _fit_sets(_weigh(button_sets or {}), room=budget - spent)
+    # Диалог берёт то, что осталось после наборов: §4 ставит наборы выше реплик,
+    # то есть старые реплики выдавливаются в ноль раньше, чем уйдёт первый набор.
+    dialog = _dialog(session, session_id, room=budget - spent - sum(item.cost for item in kept))
+    tail = {"role": "user", "content": _with_sets(user_block, kept)}
+    return Window([*head, *dialog, tail], dropped)
+
+
+def _weigh(button_sets: dict[str, Any]) -> list[_Set]:
+    """Вес считается по той самой строке, что уйдёт в промпт: мерить одну
+    сериализацию, а отправлять другую значило бы промахиваться мимо бюджета."""
+    items = []
+    for order, (name, payload) in enumerate(button_sets.items()):
+        text = _serialize(name, payload)
+        items.append(_Set(name, text, tokens.estimate(text), order))
+    return sorted(items, key=lambda item: item.cost, reverse=True)
+
+
+def _fit_sets(items: list[_Set], room: int) -> tuple[list[_Set], tuple[str, ...]]:
+    """Потолок max_buttons ограничивает число вызовов инструментов, а не бюджет:
+    замерено, что slim плюс один только `security` перебирает окно базового профиля.
+    Настоящая защита — вес, поэтому лишние наборы уходят по одному с самого дорогого."""
+    kept = list(items)
+    dropped: list[str] = []
+    while kept and sum(item.cost for item in kept) > room:
+        dropped.append(kept.pop(0).name)
+    return kept, tuple(dropped)
+
+
+def _with_sets(user_block: str, kept: list[_Set]) -> str:
+    if not kept:
+        return user_block
+    ordered = sorted(kept, key=lambda item: item.order)
+    return "\n".join([user_block, SETS_HEADER, *(item.text for item in ordered)])
+
+
+def _serialize(name: str, payload: Any) -> str:
+    return json.dumps({name: payload}, ensure_ascii=False, default=str)
 
 
 def anchor(session: Session, session_id: UUID, attach_tools: bool = False) -> str | None:
