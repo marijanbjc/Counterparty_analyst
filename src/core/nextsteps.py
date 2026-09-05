@@ -20,19 +20,37 @@ ACTION = "action"
 
 ALTERNATIVES = "alternatives"
 
-# Больше трёх подсказок читаются как меню, а не как продолжение разговора.
-LIMIT = 3
+# Больше четырёх подсказок читаются как меню, а не как продолжение разговора.
+LIMIT = 4
+
+# Углублённые разборы живут здесь, а не на кнопках первичного хода (§8):
+# сообщение уходит БЕЗ ИНН, чтобы роутер увёл его в уточнение, где факт-пакета
+# в промпте нет и набор помещается в бюджет. Добавишь сюда ИНН — ход уйдёт
+# в разбор, и вся экономия пропадёт.
+DETAILS = (
+    ("finance", "Разобрать финансы детальнее", "Разбери финансы детальнее"),
+    ("legal", "Проверить суды и взыскания", "Проверь суды и взыскания детальнее"),
+    ("security", "Посмотреть статус и владельцев", "Посмотри статус и владельцев"),
+    ("activity", "Узнать, чем занимается", "Расскажи, чем занимается"),
+)
 
 
-def _item(code: str, label: str, kind: str = PROMPT, prompt: str | None = None) -> dict[str, Any]:
-    return {"code": code, "label": label, "kind": kind, "prompt": prompt}
+def _item(
+    code: str, label: str, kind: str = PROMPT, prompt: str | None = None, dataset: str | None = None
+) -> dict[str, Any]:
+    return {"code": code, "label": label, "kind": kind, "prompt": prompt, "dataset": dataset}
 
 
-def for_report(pack: dict[str, Any], verdict: str | None) -> list[dict[str, Any]]:
+def for_report(
+    pack: dict[str, Any], verdict: str | None, done: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
     """Подсказки после разбора одного контрагента.
 
     Порядок — по важности находки, а не по порядку проверок: первым идёт то,
     что сильнее всего меняет решение клиента.
+
+    `done` — темы, уже дочитанные на этом ходе: предлагать их снова значит
+    отправить клиента по кругу.
     """
     inn = pack.get("inn") or ""
     status = pack.get("legal_status") or {}
@@ -41,10 +59,15 @@ def for_report(pack: dict[str, Any], verdict: str | None) -> list[dict[str, Any]
     items: list[dict[str, Any]] = []
 
     critical = status.get("severity") == "critical"
-    if critical or verdict == "Не рекомендуется":
-        # §7: подбор альтернативы — самая сильная из подсказок. Клиент остался
-        # без контрагента, и продолжение разговора для него важнее разбора.
-        items.append(_item(ALTERNATIVES, "Найти похожих без таких рисков", kind=ACTION))
+    # §7: подбор альтернативы — самая сильная из подсказок. Клиент остался без
+    # контрагента, и продолжение разговора для него важнее любых деталей по
+    # тому, с кем он работать не станет. Поэтому она стоит первой и НЕ участвует
+    # в обрезке по лимиту: иначе её вытесняли бы углублённые разборы.
+    pinned = (
+        [_item(ALTERNATIVES, "Найти похожих без таких рисков", kind=ACTION)]
+        if critical or verdict == "Не рекомендуется"
+        else []
+    )
 
     if critical:
         items.append(
@@ -68,7 +91,7 @@ def for_report(pack: dict[str, Any], verdict: str | None) -> list[dict[str, Any]
         items.append(
             _item(
                 "ask_documents",
-                "Что запросить у контрагента",
+                "Какие документы запросить",
                 prompt=f"Какие документы запросить у контрагента {inn}, чтобы закрыть пробелы в данных?",
             )
         )
@@ -82,13 +105,20 @@ def for_report(pack: dict[str, Any], verdict: str | None) -> list[dict[str, Any]
             )
         )
 
+    # Углублённые разборы: дозагрузка данных, которых в базовом отчёте нет.
+    items += [
+        _item(f"detail_{key}", label, prompt=prompt, dataset=key)
+        for key, label, prompt in DETAILS
+        if key not in done
+    ]
+
     # Сравнение уместно всегда, но это самый слабый повод — идёт последним
     # и только если более содержательных подсказок не набралось.
     # Единственная подсказка-черновик: второй ИНН знает только клиент.
     items.append(
         _item("compare", "Сравнить с другим контрагентом", kind=DRAFT, prompt=f"Сравни {inn} и ")
     )
-    return items[:LIMIT]
+    return pinned + items[:LIMIT]
 
 
 def for_compare(packs: list[dict[str, Any]]) -> list[dict[str, Any]]:

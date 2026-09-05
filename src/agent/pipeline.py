@@ -350,7 +350,7 @@ def _prepare(
             message=message,
         )
         if route.scenario == agent_router.ANALYZE:
-            _plan_analyze(session, plan, route.inns[0], buttons)
+            _plan_analyze(session, plan, route.inns[0])
         elif route.scenario == agent_router.COMPARE:
             _plan_compare(session, plan, route.inns)
         elif route.scenario == agent_router.CLARIFY:
@@ -370,13 +370,20 @@ def _prepare(
         return plan
 
 
-def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | None) -> None:
+def _plan_analyze(session: Session, plan: _Plan, inn: str) -> None:
+    """Первичный разбор — всегда базовый: факт-пакет и ничего сверху (§8).
+
+    Наборы сюда не прикладываются намеренно. Складываясь с факт-пакетом, они
+    давали 7848 токенов при бюджете 6400, и у 31 сочетания из 500 набор молча
+    отваливался — кнопка срабатывала на лёгком контрагенте и не срабатывала
+    на тяжёлом. Объяснить это клиенту нельзя, поэтому углублённые разборы
+    вынесены на следующий ход, где факт-пакета в промпте уже нет.
+    """
     pack = factpack.build(session, inn, mode=plan.profile.factpack_mode)
     if pack is None:
         raise TurnError(404, "Контрагента с таким ИНН в базе нет.")
 
     decision = verdicts.decide(pack)
-    sets = prefetch.collect(buttons or (), pack["inn"], plan.profile.max_buttons)
     _configure_tools(session, plan, (pack["inn"],))
     focused = _focused_blocks(pack["inn"], plan)
     window = context.build(
@@ -390,7 +397,6 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | 
         user_block_tokens=context.user_block_cost(block),
         # В разборе факт-пакет и так в контексте, якорь дублировал бы его (§4.1).
         with_anchor=False,
-        button_sets=sets.data,
         extra_blocks=focused or None,
         tools_scope=_tools_scope(plan),
     )
@@ -406,8 +412,6 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | 
     plan.baseline = verdicts.apply(report_builder.build(pack), pack)
     plan.contractor = {"inn": pack["inn"], "short_name": pack["short_name"]}
     plan.title = pack["short_name"]
-    plan.notice = _sets_notice(sets, window)
-    plan.applied_sets = tuple(name for name in sets.data if name not in window.dropped_sets)
     plan.llm_messages = window.messages
     plan.schema = prompts.REPORT_SCHEMA
     plan.expected_completion = get_settings().tokens_expected_completion
@@ -432,7 +436,6 @@ def _plan_compare(session: Session, plan: _Plan, inns: tuple[str, ...]) -> None:
     packs = factpack.build_many(
         session,
         [row["inn"] for row in payload["matrix"]],
-        role=plan.role_preset,
         mode=plan.profile.factpack_mode,
     )
     decisions = [{"inn": pack["inn"], **verdicts.decide(pack)} for pack in packs]
@@ -473,15 +476,17 @@ def _plan_clarify(session: Session, plan: _Plan, last: Any, buttons: list[str] |
     }
     plan.contractor = {"inn": last.inn, "short_name": pack.get("short_name") or last.inn}
     _configure_tools(session, plan, (last.inn,))
+    # Углублённые наборы живут ЗДЕСЬ, а не на первичном разборе (§8): там они
+    # складывались с факт-пакетом и не влезали в бюджет. ИНН берётся из якоря
+    # сессии — вводить его заново клиенту не нужно.
+    sets = prefetch.collect(buttons or (), last.inn, plan.profile.max_buttons)
+    if sets.data:
+        # Схемы инструментов вместе с набором снова упирают ход в потолок
+        # (1817 + 2898 + системная часть > бюджета). Данные уже в промпте,
+        # дозапрашивать нечего.
+        plan.tool_rounds = 0
+        plan.tool_names = []
     block = prompts.clarify_block(plan.message, with_tools=plan.tool_rounds > 0)
-    # Кнопки здесь игнорируются: набор висит на свежем разборе, а уточнение
-    # его не делает — дочитывать данные не к чему приложить. Молчать об этом
-    # нельзя: клиент отмечал набор и не понимал, почему ничего не изменилось.
-    if buttons:
-        plan.notice = (
-            "Отмеченные темы разбираются вместе с новой проверкой по ИНН. "
-            "Назовите ИНН, и я подниму их."
-        )
     window = context.build(
         session,
         plan.session_id,
@@ -492,9 +497,12 @@ def _plan_clarify(session: Session, plan: _Plan, last: Any, buttons: list[str] |
         user_block=block,
         user_block_tokens=context.user_block_cost(block),
         with_anchor=True,
+        button_sets=sets.data,
         tools_scope=_tools_scope(plan),
     )
-    plan.stages = (STAGE_CONTEXT,)
+    plan.notice = _sets_notice(sets, window)
+    plan.applied_sets = tuple(name for name in sets.data if name not in window.dropped_sets)
+    plan.stages = (STAGE_PREFETCH, STAGE_CONTEXT) if sets.data else (STAGE_CONTEXT,)
     plan.llm_messages = window.messages
     plan.schema = prompts.REPLY_SCHEMA
     plan.expected_completion = get_settings().tokens_expected_completion // CLARIFY_COMPLETION_DIVISOR
@@ -583,6 +591,11 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
             "report": last.get("report"),
             "contractor": plan.contractor,
             "degraded": False,
+            # Подсказки нужны и после уточнения: без них клиент, дочитавший
+            # финансы, снова упирался в тупик и должен был придумывать вопрос сам.
+            "next_steps": nextsteps.for_report(
+                last.get("report") or {}, last.get("verdict"), plan.applied_sets
+            ),
             "notice": plan.notice,
             **_badge(last.get("report")),
             REPLY_TOKENS: _completion(result.usage, answer),
@@ -682,6 +695,9 @@ def _degraded(plan: _Plan, detail: str, prefix: str = "") -> dict[str, Any]:
             "report": last.get("report"),
             "contractor": plan.contractor,
             "degraded": True,
+            "next_steps": nextsteps.for_report(
+                last.get("report") or {}, last.get("verdict"), plan.applied_sets
+            ),
             "notice": notice,
             "key_risks": [],
             "positives": [],

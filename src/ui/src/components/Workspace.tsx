@@ -36,57 +36,24 @@ const ROLES: Array<{ value: RolePreset; label: string; hint: string }> = [
   { value: 'activity', label: 'Чем занимается', hint: 'Акцент на видах деятельности, лицензиях, проверках и закупках' },
 ]
 
-/** Темы разбора — кнопки под полем ввода (client_path_ideas.md §3).
- *
- *  В шестерёнке их больше нет: там они дублировали эти же кнопки, и трёх групп
- *  элементов управления никто не различал. `draft` подставляется в поле готовой
- *  фразой с ИНН — клиенту остаётся нажать «отправить», а в истории диалога
- *  видно, о чём он спрашивал.
- *
- *  Набор followups убран: список «что запросить» считается детерминированно
- *  и попадает в ответ ВСЕГДА, независимо от кнопки. Кнопка лишь скармливала
- *  тот же список модели — на экране от неё ничего не менялось.
- */
-const DATASETS: Array<{ value: DataSet; label: string; hint: string; draft: string }> = [
-  {
-    value: 'finance',
-    label: 'Финансы',
-    hint: 'Подниму отчётность за три года, чистые активы и долговую нагрузку и разберу их в ответе',
-    draft: 'Разбери финансы',
-  },
-  {
-    value: 'legal',
-    label: 'Суды и взыскания',
-    hint: 'Подниму действующие взыскания отдельно от истории и арбитраж по годам',
-    draft: 'Проверь суды и взыскания',
-  },
-  {
-    value: 'security',
-    label: 'Статус и владельцы',
-    hint: 'Подниму статус в ЕГРЮЛ, отметки ФНС, владельцев и связанные компании',
-    draft: 'Проверь статус и владельцев',
-  },
-  {
-    value: 'activity',
-    label: 'Чем занимается',
-    hint: 'Подниму виды деятельности, лицензии, проверки и госзакупки',
-    draft: 'Расскажи, чем занимается',
-  },
-]
-
 /** Карточки на стартовом экране (client_path_ideas.md §1).
  *
- *  Карточка называет действие и результат, а не жизненную ситуацию клиента:
- *  каждая — готовая комбинация «сценарий + фокус + набор», то есть то, что
- *  система и так умеет, просто выбранное одним кликом. Приставки «хочу…» нет
- *  намеренно — карточка сама по себе и есть выбор.
+ *  Карточка задаёт ДВЕ вещи: готовую фразу в поле (она и определяет, один
+ *  контрагент или несколько) и вектор анализа. Данных карточка не подгружает —
+ *  углублённые разборы предлагаются подсказками после первого ответа (§8).
+ *
+ *  Векторные карточки дублируют ряд кнопок под полем ввода, и это сознательно:
+ *  на пустом экране карточка с пояснением ориентирует быстрее, чем кнопка,
+ *  подсказка к которой видна только при наведении.
+ *
+ *  Сценарий — разбор или сравнение — выбирает роутер по числу ИНН в отправленном
+ *  сообщении, а не карточка.
  */
 type ScenarioCard = {
   key: string
   title: string
   hint: string
   role: RolePreset
-  datasets: DataSet[]
   draft: string
   primary: boolean
 }
@@ -97,7 +64,6 @@ const SCENARIOS: ScenarioCard[] = [
     title: 'Проверить контрагента',
     hint: 'Вердикт, риски, сильные стороны и динамика выручки по одному ИНН',
     role: 'general',
-    datasets: [],
     draft: 'Проверь контрагента по ИНН ',
     primary: true,
   },
@@ -106,7 +72,6 @@ const SCENARIOS: ScenarioCard[] = [
     title: 'Сравнить нескольких',
     hint: 'Таблица по 2–10 ИНН: деньги, суды, взыскания и вердикт по каждому',
     role: 'general',
-    datasets: [],
     draft: 'Сравни контрагентов по ИНН: ',
     primary: true,
   },
@@ -115,7 +80,6 @@ const SCENARIOS: ScenarioCard[] = [
     title: 'Оценить финансы и долги',
     hint: 'Выручка и прибыль по годам, чистые активы, долговая нагрузка',
     role: 'finance',
-    datasets: ['finance'],
     draft: 'Оцени финансовое состояние контрагента по ИНН ',
     primary: true,
   },
@@ -124,7 +88,6 @@ const SCENARIOS: ScenarioCard[] = [
     title: 'Проверить суды и взыскания',
     hint: 'Действующие взыскания отдельно от истории, арбитраж по годам',
     role: 'legal',
-    datasets: ['legal'],
     draft: 'Проверь суды и взыскания у контрагента с ИНН ',
     primary: true,
   },
@@ -133,7 +96,6 @@ const SCENARIOS: ScenarioCard[] = [
     title: 'Узнать, кто за компанией',
     hint: 'Статус в ЕГРЮЛ, отметки ФНС, владельцы, связанные компании',
     role: 'security',
-    datasets: [],
     draft: 'Кто стоит за компанией с ИНН ',
     primary: false,
   },
@@ -142,14 +104,10 @@ const SCENARIOS: ScenarioCard[] = [
     title: 'Узнать, чем занимается',
     hint: 'Виды деятельности, лицензии, проверки и госзакупки',
     role: 'activity',
-    datasets: ['activity'],
     draft: 'Расскажи, чем занимается контрагент с ИНН ',
     primary: false,
   },
 ]
-
-// Потолок наборов за ход — ExecutionProfile.max_buttons на бэкенде (§8.4).
-const MAX_DATASETS: Record<string, number> = { basic: 1, extended: 6 }
 
 const STAGE_LABELS: Record<string, string> = {
   prefetch: 'Собираю данные',
@@ -167,14 +125,6 @@ const FOCUSED_STAGE_LABELS: Record<string, string> = {
   legal: 'Углубляю юридический разбор',
   security: 'Углубляю проверку безопасности',
   activity: 'Углубляю разбор деятельности',
-}
-
-/** Подсказка у отключённой темы. Слово «ход» клиенту ничего не говорит:
- *  ограничение объясняем через то, что он видит — одно сообщение. */
-function cappedHint(max: number): string {
-  return max === 1
-    ? 'За одно сообщение разбираю одну тему. Снимите отметку, чтобы выбрать другую.'
-    : `За одно сообщение разбираю не больше ${max} тем. Снимите отметку, чтобы выбрать другую.`
 }
 
 function stageLabel(stage: string) {
@@ -592,7 +542,7 @@ function NextSteps({ steps, inn, token, onSend, onDraft }: {
   steps: NextStep[]
   inn: string | null
   token: string
-  onSend: (text: string) => void
+  onSend: (text: string, sets?: DataSet[]) => void
   onDraft: (text: string) => void
 }) {
   const [openAction, setOpenAction] = useState<string | null>(null)
@@ -602,7 +552,9 @@ function NextSteps({ steps, inn, token, onSend, onDraft }: {
     const text = step.prompt ?? step.label
     // draft — единственный случай, когда вопрос неполон: клиенту надо
     // дописать второй ИНН, отправлять такое сразу нельзя.
-    return step.kind === 'draft' ? onDraft(text) : onSend(text)
+    return step.kind === 'draft'
+      ? onDraft(text)
+      : onSend(text, step.dataset ? [step.dataset] : [])
   }
   return (
     <div className="next-steps">
@@ -680,10 +632,7 @@ function BlockList({ title, tone, items, empty }: {
  *  Примеров с реальными ИНН здесь нет намеренно: подставить клиенту компанию
  *  из базы значит показать её состав.
  */
-function WelcomeScreen({ maxDatasets, onPick }: {
-  maxDatasets: number
-  onPick: (card: ScenarioCard) => void
-}) {
+function WelcomeScreen({ onPick }: { onPick: (card: ScenarioCard) => void }) {
   const [all, setAll] = useState(false)
   const cards = all ? SCENARIOS : SCENARIOS.filter((card) => card.primary)
   return (
@@ -708,21 +657,20 @@ function WelcomeScreen({ maxDatasets, onPick }: {
         </Button>
       )}
 
-      {/* Сноски о возможностях и границах свёрнуты: на старте важнее сценарии,
-          а развёрнутыми списками они срезали карточки за нижний край. */}
+      {/* Свёрнуто: на старте важнее сценарии, развёрнутыми списками они срезали
+          карточки за нижний край (§2). Про границы — «не ищу по названию»,
+          «не оцениваю сделку» — здесь больше нет: это говорится в ответе на
+          сообщение без ИНН, то есть тогда, когда клиент спросил. */}
       <details className="welcome-more">
-        <summary>Что ещё есть и чего не умею</summary>
+        <summary>Что делают кнопки под полем ввода</summary>
         <ul className="welcome-notes">
           <li>
-            Кнопки под полем ввода поднимают дополнительные сведения по теме и
-            сами подставляют вопрос —
-            {maxDatasets === 1 ? ' по одной теме на сообщение' : ` до ${maxDatasets} тем на сообщение`}.
+            Задают, на чём сосредоточиться в разборе: финансы, суды и взыскания,
+            статус и владельцы, чем занимается. По умолчанию — общий обзор.
           </li>
-          <li>В шестерёнке — на чём сосредоточиться: это действует на всю проверку.</li>
-          <li>Искать по названию, отрасли или региону не умею — работаю по ИНН.</li>
           <li>
-            Оценивать конкретную сделку тоже не берусь: показываю, что видно
-            в отчёте, решение остаётся за вами.
+            Данных они не добавляют, только меняют акцент ответа. Углубиться
+            в тему предложу отдельной кнопкой после разбора.
           </li>
         </ul>
       </details>
@@ -767,7 +715,7 @@ function AssistantMessage({ content, blocks, degraded, token, onSend, onDraft }:
   blocks: MessageBlocks
   degraded?: boolean
   token: string
-  onSend: (text: string) => void
+  onSend: (text: string, sets?: DataSet[]) => void
   onDraft: (text: string) => void
 }) {
   const risks = blocks.key_risks ?? []
@@ -779,7 +727,7 @@ function AssistantMessage({ content, blocks, degraded, token, onSend, onDraft }:
       <MessageHeader blocks={blocks} />
       <p>{content}</p>
       {(blocks.datasets ?? []).length > 0 && (
-        <p className="msg-datasets">Дочитал по вашей отметке: {(blocks.datasets ?? []).join(', ').toLowerCase()}</p>
+        <p className="msg-datasets">Дополнительно поднял: {(blocks.datasets ?? []).join(', ').toLowerCase()}</p>
       )}
       {blocks.report && <RevenueChart pack={blocks.report} />}
       {blocks.comparison && <ComparisonTable data={blocks.comparison} />}
@@ -914,35 +862,19 @@ function AiPanel({
   const [notice, setNotice] = useState<string | null>(null)
   const [mobileView, setMobileView] = useState<'chat' | 'report'>('chat')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [settingsOpen, setSettingsOpen] = useState(false)
-  const [datasets, setDatasets] = useState<DataSet[]>([])
   const [reportOpen, setReportOpen] = useState(true)
   const [draftUser, setDraftUser] = useState<string | null>(null)
   const [draftAnswer, setDraftAnswer] = useState('')
   const [stage, setStage] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const settingsRef = useRef<HTMLDivElement>(null)
   // Карточка на старте подставляет черновик — курсор должен встать сразу
   // за ним, чтобы клиенту оставалось только вписать ИНН.
   const composerRef = useRef<HTMLTextAreaElement>(null)
-  // Текст, подставленный кнопкой темы: по нему отличаем свой черновик от того,
-  // что клиент написал сам, — чужое не затираем и не чистим.
-  const draftRef = useRef('')
   const role = activeSession?.role_preset || 'general'
-  const maxDatasets = MAX_DATASETS[profile?.profile ?? ''] ?? MAX_DATASETS.basic
   const orderedMessages = useMemo(
     () => messages.filter((item) => item.role === 'user' || item.role === 'assistant'),
     [messages],
   )
-
-  useEffect(() => {
-    if (!settingsOpen) return
-    const close = (event: PointerEvent) => {
-      if (!settingsRef.current?.contains(event.target as Node)) setSettingsOpen(false)
-    }
-    document.addEventListener('pointerdown', close)
-    return () => document.removeEventListener('pointerdown', close)
-  }, [settingsOpen])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -969,30 +901,6 @@ function AiPanel({
     }
   }
 
-  /** Выбор темы под полем ввода.
-   *
-   *  Кроме отметки набора подставляет готовую фразу с ИНН уже проверенного
-   *  контрагента: раньше клиенту приходилось вводить ИНН заново на каждую
-   *  тему, и в истории диалога оставалось голое число (§3, §11).
-   *
-   *  Черновик правится только пока клиент его не тронул: `draftRef` помнит,
-   *  что подставили мы, и чужой текст затирать не даёт.
-   */
-  const pickDataset = (item: (typeof DATASETS)[number]) => {
-    const checked = datasets.includes(item.value)
-    setDatasets((items) => (
-      checked
-        ? items.filter((value) => value !== item.value)
-        : items.length < maxDatasets ? [...items, item.value] : items
-    ))
-    const ours = message === '' || message === draftRef.current
-    if (!ours) return
-    const text = checked ? '' : `${item.draft} ${currentPack?.inn ?? ''}`.trim()
-    draftRef.current = text
-    setMessage(text)
-    if (text) composerRef.current?.focus()
-  }
-
   const submit = (event: FormEvent) => {
     event.preventDefault()
     void send(message)
@@ -1001,9 +909,10 @@ function AiPanel({
   /** Отправка произвольного текста, а не только содержимого поля ввода:
    *  подсказка следующего шага и кнопка «Проверить» шлют готовый вопрос
    *  сразу, без промежуточного клика по «отправить» (§4, §7). */
-  const send = async (text: string) => {
+  const send = async (text: string, sets?: DataSet[]) => {
     if (!activeSession || !text.trim() || sending) return
     const content = text.trim()
+    const turnSets = sets ?? []
     const requestSessionId = activeSession.id
     const controller = new AbortController()
     abortRef.current = controller
@@ -1020,7 +929,7 @@ function AiPanel({
         activeSession.id,
         content,
         role,
-        datasets,
+        turnSets,
         {
           onStage: (name) => setStage(name),
           onDelta: (text) => setDraftAnswer((value) => value + text),
@@ -1031,7 +940,6 @@ function AiPanel({
             if (response.session.id !== requestSessionId) return
             onChatCompleted(response.messages, response.report, response.session)
             setNotice(response.notice)
-            setDatasets([])
             if (response.report) setMobileView('report')
           },
           onError: (detail, degraded) => {
@@ -1043,7 +951,6 @@ function AiPanel({
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === 'AbortError') {
         setError('Показ остановлен. Расчёт продолжится на сервере и появится после повторного открытия проверки.')
-        setDatasets([])
       } else {
         setError(reason instanceof ApiError ? reason.message : 'Сервис временно недоступен.')
         setMessage((value) => value || content)
@@ -1129,10 +1036,8 @@ function AiPanel({
               )}
               {!loading && orderedMessages.length === 0 && (
                 <WelcomeScreen
-                  maxDatasets={maxDatasets}
                   onPick={(card) => {
                     setMessage(card.draft)
-                    setDatasets(card.datasets.slice(0, maxDatasets))
                     void changeRole(card.role)
                     composerRef.current?.focus()
                   }}
@@ -1147,7 +1052,7 @@ function AiPanel({
                       blocks={item.meta ?? {}}
                       degraded={item.meta?.degraded}
                       token={auth.token}
-                      onSend={(text) => void send(text)}
+                      onSend={(text, sets) => void send(text, sets)}
                       onDraft={(text) => {
                         setMessage(text)
                         composerRef.current?.focus()
@@ -1179,46 +1084,6 @@ function AiPanel({
               {error && <div className="composer-error" role="alert">{error}</div>}
               {notice && <div className="composer-notice" role="status">{notice}</div>}
               <div className="composer-row">
-                <div className="composer-settings" ref={settingsRef}>
-                  <Button
-                    view="transparent"
-                    size={48}
-                    className="settings-button"
-                    aria-label="На чём сосредоточиться в разборе"
-                    aria-haspopup="menu"
-                    aria-expanded={settingsOpen}
-                    disabled={!activeSession || sending}
-                    onClick={() => setSettingsOpen(!settingsOpen)}
-                  >
-                    <Icon name="gear" size={18} />
-                  </Button>
-                  {settingsOpen && (
-                    <div className="settings-popover" role="menu">
-                      <p>На чём сосредоточиться</p>
-                      {ROLES.map((item) => (
-                        <Button
-                          key={item.value}
-                          role="menuitemradio"
-                          aria-checked={item.value === role}
-                          view={item.value === role ? 'primary' : 'transparent'}
-                          size={32}
-                          block
-                          title={item.hint}
-                          onClick={() => {
-                            setSettingsOpen(false)
-                            void changeRole(item.value)
-                          }}
-                        >
-                          {item.label}
-                        </Button>
-                      ))}
-                      <small className="settings-note">
-                        Действует на всю проверку, пока не смените. Темы разбора —
-                        кнопками под полем ввода.
-                      </small>
-                    </div>
-                  )}
-                </div>
                 <Textarea
                   block
                   autosize
@@ -1260,26 +1125,24 @@ function AiPanel({
                   </Button>
                 )}
               </div>
-              {/* Темы разбора: все под полем ввода, из шестерёнки убраны (§3). */}
-              <div className="composer-quick" role="group" aria-label="Разобрать подробнее">
-                {DATASETS.map((item) => {
-                  const checked = datasets.includes(item.value)
-                  const capped = !checked && datasets.length >= maxDatasets
-                  return (
-                    <Button
-                      key={item.value}
-                      type="button"
-                      view={checked ? 'primary' : 'secondary'}
-                      size={32}
-                      aria-pressed={checked}
-                      disabled={capped || !activeSession || sending}
-                      title={capped ? cappedHint(maxDatasets) : item.hint}
-                      onClick={() => pickDataset(item)}
-                    >
-                      {item.label}
-                    </Button>
-                  )
-                })}
+              {/* Вектор анализа — единственный ряд управления под полем ввода.
+                  Данных не добавляет, только меняет акцент ответа; углублённые
+                  разборы предлагаются подсказками после ответа (§8). */}
+              <div className="composer-quick" role="group" aria-label="На чём сосредоточиться">
+                {ROLES.map((item) => (
+                  <Button
+                    key={item.value}
+                    type="button"
+                    view={item.value === role ? 'primary' : 'secondary'}
+                    size={32}
+                    aria-pressed={item.value === role}
+                    disabled={!activeSession || sending}
+                    title={item.hint}
+                    onClick={() => void changeRole(item.value)}
+                  >
+                    {item.label}
+                  </Button>
+                ))}
               </div>
               <small>
                 Смотрю: {ROLES.find((item) => item.value === role)?.label.toLowerCase()}.

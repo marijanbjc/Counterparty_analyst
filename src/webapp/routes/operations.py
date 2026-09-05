@@ -62,7 +62,6 @@ def compare(payload: CompareRequest, session: DbSession, user: CurrentUser) -> C
     packs = factpack.build_many(
         session,
         valid,
-        role=payload.role_preset,
         mode=execution.factpack_mode,
     )
     found = {pack["inn"] for pack in packs}

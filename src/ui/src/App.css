@@ -1016,118 +1016,15 @@ h3,
    блоком, добавленным после строки ввода, и раскладка композера уезжала. */
 .composer-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  /* Две колонки: шестерёнка убрана, вектор выбирается кнопками ниже (§8). */
+  grid-template-columns: minmax(0, 1fr) 44px;
   gap: 8px;
   align-items: end;
-}
-
-.composer-settings {
-  position: relative;
-}
-
-.settings-button {
-  width: 44px !important;
-  min-width: 44px !important;
-  padding: 0 !important;
-  color: var(--ab-muted) !important;
-}
-
-.settings-popover {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 30;
-  display: grid;
-  gap: 2px;
-  /* два столбца наборов не помещались в прежние 190px */
-  width: 248px;
-  padding: 10px;
-  border: 1px solid var(--ab-line);
-  border-radius: 9px;
-  background: white;
-  box-shadow: 0 10px 28px rgba(16, 22, 28, 0.16);
-}
-
-.settings-popover > p {
-  margin: 0 0 6px 6px;
-  color: var(--ab-muted);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.settings-popover button {
-  justify-content: flex-start !important;
-}
-
-.settings-popover button span {
-  width: 100%;
-  text-align: left;
-}
-
-/* Счётчик живёт на самой шестерёнке: поповер закрыт почти всегда,
-   и отмеченные наборы иначе ничем себя не выдают (§7.4). */
-.settings-count {
-  position: absolute;
-  top: 2px;
-  right: -2px;
-  display: grid;
-  place-items: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 9px;
-  background: var(--ab-red);
-  color: white;
-  font-size: 10px;
-  font-weight: 700;
-  pointer-events: none;
-}
-
-.settings-popover > p.settings-divider {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--ab-line);
-}
-
-.settings-sets {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px;
-  /* только transform и opacity — свойства раскладки при появлении не трогаем */
-  animation: settings-sets-in 160ms cubic-bezier(.16, 1, .3, 1);
 }
 
 @keyframes settings-sets-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
-}
-
-.settings-sets button {
-  padding: 0 6px !important;
-}
-
-.settings-sets button span {
-  font-size: 12px;
-  line-height: 1.15;
-  white-space: normal;
-}
-
-.settings-hint {
-  margin: 8px 6px 0;
-  color: var(--ab-muted);
-  font-size: 10px;
-  line-height: 1.3;
-}
-
-/* Что вообще делают эти кнопки — без пояснения клиент видел набор ярлыков. */
-.settings-note {
-  display: block;
-  margin: 0 6px 8px;
-  color: var(--ab-muted);
-  font-size: 10px;
-  line-height: 1.3;
 }
 
 .ai-composer > small {
