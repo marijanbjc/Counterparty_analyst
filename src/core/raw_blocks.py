@@ -80,10 +80,14 @@ def licenses(raw: dict) -> dict:
     return {"count": len(items), "items": items}
 
 
-def inspections(raw: dict, recent_limit: int = 5) -> dict:
+AUTHORITY_LIMIT = 5
+
+
+def inspections(raw: dict, recent_limit: int = 5, authority_limit: int = AUTHORITY_LIMIT) -> dict:
     rows = _items(raw, "inspections")
     if not rows:
-        return {"total": 0, "by_result": {}, "by_form": {}, "authorities": [], "period": None, "recent": []}
+        return {"total": 0, "by_result": {}, "by_form": {}, "authorities": [],
+                "authorities_total": 0, "authorities_other": 0, "period": None, "recent": []}
 
     parsed = [
         {
@@ -105,12 +109,20 @@ def inspections(raw: dict, recent_limit: int = 5) -> dict:
         "total": len(parsed),
         "by_result": dict(results),
         "by_form": dict(Counter(item["form"] for item in parsed if item["form"])),
-        "authorities": [
-            {"name": name, "count": count}
-            for name, count in Counter(item["authority"] for item in parsed if item["authority"]).most_common()
-        ],
+        # Список органов не ограничивался, и один контрагент с 52 надзорными
+        # органами раздувал набор «Деятельность» вчетверо (known_issues.md §6).
+        **_authorities(parsed, authority_limit),
         "period": {"first": dates[0], "last": dates[-1]} if dates else None,
         "recent": ordered[:recent_limit],
+    }
+
+
+def _authorities(parsed: list[dict], limit: int) -> dict:
+    counted = Counter(item["authority"] for item in parsed if item["authority"]).most_common()
+    return {
+        "authorities": [{"name": name, "count": count} for name, count in counted[:limit]],
+        "authorities_total": len(counted),
+        "authorities_other": max(len(counted) - limit, 0),
     }
 
 

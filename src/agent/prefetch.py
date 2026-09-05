@@ -7,7 +7,6 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from src.mcp.advanced import charts as charts_tools
 from src.mcp.advanced import questions as questions_tools
 from src.mcp.tools import activity as activity_tools
 from src.mcp.tools import finance as finance_tools
@@ -22,7 +21,6 @@ LEGAL = "legal"
 SECURITY = "security"
 ACTIVITY = "activity"
 FOLLOWUPS = "followups"
-CHARTS = "charts"
 
 LABELS: dict[str, str] = {
     FINANCE: "Финансы",
@@ -30,7 +28,6 @@ LABELS: dict[str, str] = {
     SECURITY: "Безопасность",
     ACTIVITY: "Деятельность",
     FOLLOWUPS: "Что запросить",
-    CHARTS: "Графики",
 }
 
 
@@ -49,11 +46,30 @@ def _legal(inn: str) -> dict:
     }
 
 
+# Для оценки связей достаточно счётчиков и короткого списка: полные карточки
+# двадцати компаний раздували набор до 3 836 токенов (known_issues.md §7).
+SECURITY_AFFILIATIONS_LIMIT = 5
+
+
+def _present_flags(inn: str) -> dict:
+    """Только стоящие метки ФНС. Снятые приходят с формулировками вида
+    «не найден в реестре…» и весят больше, чем сами метки, а для оценки риска
+    не нужны: их отсутствие видно по счётчику (known_issues.md §7)."""
+    payload = profile_tools.get_fns_flags(inn)
+    flags = payload.get("flags") or []
+    present = [flag for flag in flags if flag.get("present")]
+    return {
+        **{key: value for key, value in payload.items() if key != "flags"},
+        "flags": present,
+        "confirmed_absent": len(flags) - len(present),
+    }
+
+
 def _security(inn: str) -> dict:
     return {
-        "fns_flags": profile_tools.get_fns_flags(inn),
+        "fns_flags": _present_flags(inn),
         "ownership": profile_tools.get_ownership(inn),
-        "affiliations": relations_tools.get_affiliations(inn),
+        "affiliations": relations_tools.get_affiliations(inn, limit=SECURITY_AFFILIATIONS_LIMIT),
     }
 
 
@@ -70,18 +86,12 @@ def _followups(inn: str) -> dict:
     return {"questions": questions_tools.draft_followup_questions(inn)}
 
 
-def _charts(inn: str, all_types: bool = False) -> dict:
-    chart_types = charts_tools.SINGLE if all_types else ("revenue_profit", "execproc_timeline")
-    return {chart_type: charts_tools.build_chart(inn, chart_type) for chart_type in chart_types}
-
-
 _SETS: dict[str, Callable[[str], dict]] = {
     FINANCE: _finance,
     LEGAL: _legal,
     SECURITY: _security,
     ACTIVITY: _activity,
     FOLLOWUPS: _followups,
-    CHARTS: _charts,
 }
 
 NAMES: tuple[str, ...] = tuple(_SETS)
@@ -110,13 +120,7 @@ class Prefetched:
         return " ".join(parts) or None
 
 
-def collect(
-    names: Sequence[str],
-    inn: str,
-    max_buttons: int,
-    *,
-    extended: bool = False,
-) -> Prefetched:
+def collect(names: Sequence[str], inn: str, max_buttons: int) -> Prefetched:
     """Дочитывает наборы `names` по контрагенту `inn`, не больше `max_buttons` за ход.
 
     Список приходит от клиента, поэтому мусор и повторы в нём не роняют ход:
@@ -133,10 +137,7 @@ def collect(
     limit = max(max_buttons, 0)
 
     selected = known[:limit]
-    data = {
-        name: (_charts(inn, all_types=True) if name == CHARTS and extended else _SETS[name](inn))
-        for name in selected
-    }
+    data = {name: _SETS[name](inn) for name in selected}
     return Prefetched(
         data=data,
         dropped=tuple(known[limit:]),
