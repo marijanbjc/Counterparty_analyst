@@ -227,7 +227,11 @@ def analyze_block(message: str, verdict: dict[str, Any], fact_pack: dict[str, An
 # Ключ items содержит compact-пакеты по каждому контрагенту и весит втрое больше
 # всей остальной сводки. Коду он нужен — по нему считаются вердикты и обязательные
 # упоминания, — а модели нет: всё уже агрегировано в matrix (known_issues.md §3).
-COMPARE_SUMMARY_KEYS = ("matrix", "differences", "ranking", "rank_by", "not_comparable", "not_found")
+# differences убраны: код формулировал различия, модель пересказывала их
+# в ответе, и на экране они стояли третьим повтором одного и того же. Все числа
+# для тех же выводов есть в matrix, а критический статус подстрахован
+# обязательными упоминаниями пайплайна (§9).
+COMPARE_SUMMARY_KEYS = ("matrix", "ranking", "rank_by", "not_comparable", "not_found")
 
 
 def compare_summary(payload: dict[str, Any]) -> dict[str, Any]:
