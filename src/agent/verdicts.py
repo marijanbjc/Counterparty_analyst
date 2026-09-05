@@ -3,6 +3,15 @@
 Эскалация только по severity правового статуса: хотя бы одно расхождение детектора
 есть у половины базы, и поднимать вердикт по каждому значило бы объявить эту половину
 нежелательной. Банкротство и предстоящее исключение из ЕГРЮЛ — другое дело.
+
+Critical переводит вердикт сразу в «Не рекомендуется», а не на ступень выше.
+Шаг вверх давал «Работать с осторожностью» при открытом конкурсном производстве:
+на экране это читалось как противоречие — в тексте банкротство, в вердикте
+предложение работать. Под critical попадают только банкротство и предстоящее
+исключение из ЕГРЮЛ; оба означают, что лица скоро не будет.
+
+Светофор банка при этом не трогается: risk_level остаётся в досье как есть,
+меняется только наш производный вердикт (§8.2).
 """
 
 from typing import Any
@@ -14,13 +23,6 @@ WORK = "Работать"
 WORK_WITH_CARE = "Работать с осторожностью"
 NOT_RECOMMENDED = "Не рекомендуется"
 
-# Лестница строгости: эскалация — шаг вверх, с верхней ступени шага нет.
-_ESCALATION = {WORK: WORK_WITH_CARE, WORK_WITH_CARE: NOT_RECOMMENDED}
-
-
-def escalate(verdict: str) -> str:
-    return _ESCALATION.get(verdict, verdict)
-
 
 def decide(fact_pack: dict[str, Any]) -> dict[str, Any]:
     basis = fact_pack.get("verdict_basis") or {}
@@ -28,7 +30,7 @@ def decide(fact_pack: dict[str, Any]) -> dict[str, Any]:
     base = verdict_for(basis.get("risk_level"))
     escalated = status.get("severity") == CRITICAL
     return {
-        "verdict": escalate(base) if escalated else base,
+        "verdict": NOT_RECOMMENDED if escalated else base,
         "base_verdict": base,
         "escalated": escalated,
         "reason": status.get("status_reason") if escalated else None,
