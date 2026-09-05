@@ -961,23 +961,28 @@ def _required_mentions(pack: dict[str, Any]) -> list[tuple[str | None, str]]:
     return required
 
 
+# Коды светофоров нельзя показывать клиенту: LOW и GREEN — это имена значений
+# источника, а не русский текст. В отчёте без модели строку никто не переписывает,
+# поэтому слова подставляются здесь.
+_RISK_WORDS = {"LOW": "низкий риск", "MEDIUM": "средний риск", "HIGH": "высокий риск"}
+_ZSK_WORDS = {"GREEN": "зелёный", "YELLOW": "жёлтый", "RED": "красный"}
+
+
 def _compare_text(payload: dict[str, Any], decisions: list[dict[str, Any]]) -> str:
     verdict_by_inn = {item["inn"]: item["verdict"] for item in decisions}
     lines = [f"Сравнение: {len(payload['matrix'])} контрагентов."]
     for row in payload["matrix"]:
         lines.append(
-            f"— {row['short_name']} (ИНН {row['inn']}): риск {row.get('risk_level') or 'не определён'}, "
-            f"ЗСК {row.get('zsk_risk_level') or 'не определён'}, "
+            f"— {row['short_name']} (ИНН {row['inn']}): {_RISK_WORDS.get(row.get('risk_level'), 'риск не определён')}, "
+            f"ЗСК {_ZSK_WORDS.get(row.get('zsk_risk_level'), 'не определён')}, "
             f"негативных факторов {row.get('negative_factors', 0)}. "
             f"Вердикт: {verdict_by_inn.get(row['inn'], 'не определён')}."
         )
-    if payload["differences"]:
-        lines.append("Различия:")
-        lines.extend(f"— {item['text']}" for item in payload["differences"])
+    # Блок различий убран: вперемешку с построчной сводкой он читался тяжело,
+    # а те же числа стоят рядом в таблице сравнения на экране (§9). Дисклеймер
+    # «решение остаётся за вами» тоже убран — он и так в сноске к вердикту.
     if payload["not_found"]:
         lines.append(f"Нет в базе: {', '.join(payload['not_found'])}.")
-    # §1.4: сводного вывода «работайте с этим» не даёт ни код, ни модель.
-    lines.append("Решение остаётся за вами: инструмент показывает различия, а не выбирает контрагента.")
     return "\n".join(lines)
 
 

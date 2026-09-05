@@ -900,6 +900,18 @@ function AiPanel({
     }
   }
 
+  /** Уход из проверки во время ответа.
+   *
+   *  Раньше список проверок блокировался целиком, и в медленном ходе — особенно
+   *  в отчёте без модели — клиент не мог вообще ничего. Показ обрывается, расчёт
+   *  на сервере продолжается: ответ появится, когда клиент вернётся. Удаление
+   *  проверки при этом по-прежнему заблокировано — там обрывом не обойтись.
+   */
+  const leave = async (go: () => Promise<void>) => {
+    abortRef.current?.abort()
+    await go()
+  }
+
   const submit = (event: FormEvent) => {
     event.preventDefault()
     void send(message)
@@ -992,14 +1004,14 @@ function AiPanel({
 
         <div className={`ai-panel-body ${reportOpen ? '' : 'report-collapsed'}`}>
           <aside className="ai-sessions">
-            <Button view="secondary" size={40} block leftAddons={<Icon name="plus" size={16} />} disabled={sending} onClick={() => void onCreateSession()}>
+            <Button view="secondary" size={40} block leftAddons={<Icon name="plus" size={16} />} onClick={() => void leave(onCreateSession)}>
               Новая проверка
             </Button>
             <p>История</p>
             <div>
               {sessions.map((session, index) => (
                 <div key={session.id} className={`session-row ${activeSession?.id === session.id ? 'active' : ''}`}>
-                  <Button view="transparent" size={48} block disabled={sending} onClick={() => void onSelectSession(session)}>
+                  <Button view="transparent" size={48} block onClick={() => void leave(() => onSelectSession(session))}>
                     <span><strong>{session.title || `Проверка ${sessions.length - index}`}</strong><small>{date(session.created_at)}</small></span>
                   </Button>
                   {confirmDelete === session.id ? (
