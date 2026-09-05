@@ -215,13 +215,13 @@ def _dialog(session: Session, session_id: UUID, room: int) -> list[dict]:
     return picked
 
 
-def user_block_cost(text: str, pack_variant: str | None = None, packs: int = 1) -> int:
-    """Факт-пакет меряется замеренной константой, остальное — оценкой (§4.3).
+def user_block_cost(text: str) -> int:
+    """Вес блока меряется по той самой строке, что уйдёт в промпт.
 
-    Обрамление в несколько строк не считается отдельно: оно укрывается запасом 15 %,
-    заложенным в саму оценку.
+    Раньше факт-пакет считался замеренной константой, а отправлялся реальный JSON.
+    У тяжёлых контрагентов он на сотни токенов больше константы, и ход, который
+    по расчёту помещался, на деле пробивал бюджет и падал в деградацию.
+    Константы остались только там, где измерить нечего: системный промпт до сборки
+    и схемы инструментов, которых в тексте блока нет.
     """
-    cost = tokens.estimate(text)
-    if pack_variant is not None:
-        cost += tokens.fact_pack(pack_variant) * packs
-    return cost
+    return tokens.estimate(text)
