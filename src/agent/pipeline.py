@@ -16,6 +16,7 @@
 """
 
 import json
+import logging
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
@@ -54,8 +55,10 @@ CLARIFY_COMPLETION_DIVISOR = 3
 # чтобы следующая сборка контекста считала старые реплики по факту, а не оценкой.
 REPLY_TOKENS = "_reply_tokens"
 
+logger = logging.getLogger(__name__)
+
 DEGRADED_TAIL = "Показан детерминированный отчёт."
-PARTIAL_NOTICE = "Модель вернула неполный разбор: часть отчёта заполнена детерминированно."
+PARTIAL_NOTICE = "Модель прислала не весь текст — недостающее дописано по данным отчёта."
 INTERRUPTED = "\n\nИИ-анализ прерван, ниже детерминированный отчёт.\n\n"
 
 STAGE_PREFETCH = "prefetch"
@@ -562,7 +565,9 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
             "per_contractor": _per_contractor(result.data, plan.packs),
             "comparison": plan.comparison,
             "degraded": False,
-            "notice": PARTIAL_NOTICE if result.problems else None,
+            "notice": _partial_notice(
+                result, _text(result.data, prompts.ANSWER), _text(result.data, prompts.ANALYSIS)
+            ),
             REPLY_TOKENS: _completion(result.usage, answer),
         }
 
@@ -582,9 +587,27 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
         "followups": plan.followups,
         **_badge(plan.pack),
         "degraded": False,
-        "notice": _join(plan.notice, PARTIAL_NOTICE if result.problems else None),
+        "notice": _join(
+            plan.notice,
+            _partial_notice(
+                result, _text(result.data, prompts.ANSWER), _text(result.data, prompts.ANALYSIS)
+            ),
+        ),
         REPLY_TOKENS: _completion(result.usage, answer),
     }
+
+
+def _partial_notice(result: llm.Result, *visible: str | None) -> str | None:
+    """Пометка о неполном ответе — только когда пропажу видно пользователю.
+
+    Хвостовые поля код дозаполняет детерминированно (§6.3), и на экране почти
+    всегда полный разбор: техническая тревога поверх него пугала на ровном месте
+    (§15.4). Само расхождение уходит в лог — по нему видно, что уронила модель.
+    """
+    if not result.problems:
+        return None
+    logger.warning("ответ модели разошёлся со схемой: %s", "; ".join(result.problems))
+    return None if all(visible) else PARTIAL_NOTICE
 
 
 def _fallback_text(plan: _Plan) -> str:
@@ -681,6 +704,9 @@ def _persist(plan: _Plan, outcome: dict[str, Any]) -> dict[str, Any]:
             meta={
                 "scenario": plan.scenario,
                 "inn": (outcome.get("contractor") or {}).get("inn"),
+                # Имя в шапке сообщения: без него уточняющий ответ выглядит
+                # безадресным — по какому из проверенных он, неясно.
+                "subject": (outcome.get("contractor") or {}).get("short_name"),
                 "degraded": outcome.get("degraded", False),
                 # Структурные блоки кладутся в историю целиком: после перезагрузки
                 # страницы сообщение обязано выглядеть так же, как в момент ответа.
@@ -779,8 +805,11 @@ def _per_contractor(data: dict[str, Any], packs: list[dict[str, Any]]) -> list[d
     Порядок и состав задаёт код по packs, а не модель: пропущенного она не добавит,
     лишнего не припишет. Не названные ею риски заполняются детерминированно.
     """
+    # Только цифры: модель возвращала ИНН и с пробелами, и числом. Позиционного
+    # запасного варианта здесь нет намеренно — приписать риски не тому
+    # контрагенту хуже, чем показать, что по нему модель ничего не назвала.
     by_inn = {
-        str(item.get("inn")): item
+        re.sub(r"\D", "", str(item.get("inn") or "")): item
         for item in data.get(prompts.CONTRACTORS) or []
         if isinstance(item, dict)
     }
