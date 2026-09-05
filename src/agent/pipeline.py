@@ -74,6 +74,10 @@ STAGE_PERSIST = "persist"
 # На базовом профиле разбор без цикла; уточнение получает одну попытку вызвать инструменты.
 BASIC_CLARIFY_ROUNDS = 1
 
+# Критерий рейтинга под фокус анализа. Ключи — пресеты роли, значения — критерии
+# selection._RANKERS; «риск» остаётся значением по умолчанию для всего остального.
+_RANK_BY = {"finance": "revenue", "legal": "debt_burden", "activity": "age"}
+
 # Регулярка «упомянуто?» вместо валидатора: не нашлось — дописываем готовую строку
 # из самого расхождения, ноль токенов и без перегенерации (§6.3).
 _DISCREPANCY_MARKERS = {
@@ -397,7 +401,12 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | 
 
 
 def _plan_compare(session: Session, plan: _Plan, inns: tuple[str, ...]) -> None:
-    payload = compare_contractors(list(inns), focus=plan.role_preset)
+    # rank_by обязателен: без него _ranking возвращает пустой список, и на вопрос
+    # «кто лучше» модели просто нечем отвечать. Критерий по умолчанию — риск,
+    # фокус анализа его уточняет (known_issues.md §19).
+    payload = compare_contractors(
+        list(inns), focus=plan.role_preset, rank_by=_RANK_BY.get(plan.role_preset, "risk")
+    )
     if not payload["found"]:
         raise TurnError(404, payload["hint"])
 
