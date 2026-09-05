@@ -25,10 +25,10 @@ from uuid import UUID
 import anyio.to_thread
 from sqlalchemy.orm import Session
 
-from src.agent import catalog, context, dispatcher, limiter, llm, prefetch, prompts
+from src.agent import catalog, context, dispatcher, limiter, llm, prefetch, prompts, sanitize
 from src.agent import router as agent_router
 from src.agent import tokens, verdicts
-from src.agent.profiles import EXTENDED, ExecutionProfile, profile_for
+from src.agent.profiles import ExecutionProfile, profile_for
 from src.config.settings import get_settings
 from src.core import factpack
 from src.core import inn as inn_module
@@ -39,9 +39,9 @@ from src.db.client import repository as client_repository
 from src.db.engine import db_session
 from src.db.history import repository as history_repository
 from src.db.models import Message
-from src.db.models import Session as ChatSession
 from src.mcp import toolsets
 from src.mcp.advanced.analysis import BUILDERS, run_focused_analysis
+from src.mcp.advanced.questions import draft_followup_questions
 from src.mcp.tools.selection import compare_contractors
 
 # Ответ на уточнение — реплика, а не разбор (§1.2), и резервировать под него полный
@@ -158,6 +158,8 @@ class _Plan:
     tool_rounds: int = 0
     tool_names: list[str] = field(default_factory=list)
     allowed_inns: tuple[str, ...] = ()
+    followups: list[dict[str, Any]] = field(default_factory=list)
+    comparison: dict[str, Any] | None = None
 
 
 async def run_turn(
@@ -213,7 +215,7 @@ async def run_turn(
         yield Stage(STAGE_LLM)
         called = False
         async for event in llm.stream(
-            messages, schema, get_settings().llm_tpm_limit, plan.expected_completion, tools=tools_payload
+            messages, schema, plan.profile.tpm_limit, plan.expected_completion, tools=tools_payload
         ):
             if isinstance(event, llm.ToolCalls):
                 if not use_tools:
@@ -351,12 +353,7 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | 
         raise TurnError(404, "Контрагента с таким ИНН в базе нет.")
 
     decision = verdicts.decide(pack)
-    sets = prefetch.collect(
-        buttons or (),
-        pack["inn"],
-        plan.profile.max_buttons,
-        extended=plan.profile.name == EXTENDED,
-    )
+    sets = prefetch.collect(buttons or (), pack["inn"], plan.profile.max_buttons)
     _configure_tools(session, plan, (pack["inn"],))
     focused = _focused_blocks(pack["inn"], plan)
     window = context.build(
@@ -366,8 +363,8 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | 
         system_text=prompts.system(
             prompts.REPORT_KEYS, role=plan.role_preset, with_tools=plan.tool_rounds > 0
         ),
-        user_block=prompts.analyze_block(plan.message, decision, pack),
-        user_block_tokens=context.user_block_cost(plan.message, plan.profile.factpack_mode),
+        user_block=(block := prompts.analyze_block(plan.message, decision, pack)),
+        user_block_tokens=context.user_block_cost(block),
         # В разборе факт-пакет и так в контексте, якорь дублировал бы его (§4.1).
         with_anchor=False,
         button_sets=sets.data,
@@ -390,6 +387,10 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | 
     plan.llm_messages = window.messages
     plan.schema = prompts.REPORT_SCHEMA
     plan.expected_completion = get_settings().tokens_expected_completion
+    # Список «что запросить» детерминирован и нужен интерфейсу, а не модели:
+    # в промпт он не уходит и токенов хода не занимает (known_issues.md §1).
+    questions = draft_followup_questions(pack["inn"])
+    plan.followups = questions.get("items") or [] if questions.get("found") else []
 
 
 def _plan_compare(session: Session, plan: _Plan, inns: tuple[str, ...]) -> None:
@@ -415,7 +416,7 @@ def _plan_compare(session: Session, plan: _Plan, inns: tuple[str, ...]) -> None:
         plan.session_id,
         profile=plan.profile,
         system_text=prompts.system(
-            prompts.REPORT_KEYS, role=plan.role_preset, with_tools=plan.tool_rounds > 0
+            prompts.COMPARE_KEYS, role=plan.role_preset, with_tools=plan.tool_rounds > 0
         ),
         user_block=block,
         user_block_tokens=context.user_block_cost(block),
@@ -424,9 +425,10 @@ def _plan_compare(session: Session, plan: _Plan, inns: tuple[str, ...]) -> None:
     )
     plan.stages = (STAGE_PREFETCH, STAGE_VERDICT, STAGE_CONTEXT)
     plan.packs = packs
+    plan.comparison = {**prompts.compare_summary(payload), "verdicts": decisions}
     plan.baseline_text = _compare_text(payload, decisions)
     plan.llm_messages = window.messages
-    plan.schema = prompts.REPORT_SCHEMA
+    plan.schema = prompts.COMPARE_SCHEMA
     plan.expected_completion = get_settings().tokens_expected_completion
 
 
@@ -471,19 +473,30 @@ def _will_wait(plan: _Plan, messages: list[dict] | None = None, tools: list[dict
     оцениваем то же условие снаружи: оценка запроса плюс ожидаемый ответ против
     свободного остатка минутного окна.
     """
-    settings = get_settings()
     payload = messages if messages is not None else plan.llm_messages or ()
     need = _request_tokens(payload, tools) + plan.expected_completion
-    return limiter.get_limiter(settings.llm_tpm_limit).used + need > settings.llm_tpm_limit
+    tpm = plan.profile.tpm_limit
+    return limiter.get_limiter(tpm).used + need > tpm
 
 
 def _request_tokens(messages: list[dict], tools: list[dict] | None) -> int:
-    # JSON целиком включает assistant.tool_calls и tool_call_id, которые нельзя
-    # потерять в оценке повторных итераций.
-    text = json.dumps(messages, ensure_ascii=False, default=str)
+    """Оценка запроса той же мерой, что и бюджет в context.build — по содержимому.
+
+    Дамп всего конверта считать нельзя: факт-пакет уходит в content строкой,
+    и при повторной сериализации каждая кавычка внутри него превращается в \",
+    добавляя сотни символов. Расхождение доходило до 350 токенов, и ход, честно
+    уложившийся в бюджет при сборке, падал на этой проверке в деградацию.
+    Вызовы инструментов считаются отдельно: их в content нет.
+    """
+    total = 0
+    for message in messages:
+        total += tokens.estimate(str(message.get("content") or ""))
+        for call in message.get("tool_calls") or []:
+            function = call.get("function") or {}
+            total += tokens.estimate(f"{function.get('name', '')}{function.get('arguments', '')}")
     if tools:
-        text += json.dumps(tools, ensure_ascii=False)
-    return tokens.estimate(text)
+        total += tokens.estimate(json.dumps(tools, ensure_ascii=False))
+    return total
 
 
 def _compact_tool_results(
@@ -535,6 +548,7 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
             "report": last.get("report"),
             "contractor": plan.contractor,
             "degraded": False,
+            **_badge(last.get("report")),
             REPLY_TOKENS: _completion(result.usage, answer),
         }
 
@@ -544,7 +558,9 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
         return {
             "answer": answer,
             "summary": _text(result.data, prompts.SUMMARY),
-            "analysis": _with_risks(_text(result.data, prompts.ANALYSIS) or baseline, result.data),
+            "analysis": _text(result.data, prompts.ANALYSIS) or baseline,
+            "per_contractor": _per_contractor(result.data, plan.packs),
+            "comparison": plan.comparison,
             "degraded": False,
             "notice": PARTIAL_NOTICE if result.problems else None,
             REPLY_TOKENS: _completion(result.usage, answer),
@@ -553,7 +569,7 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
     baseline = plan.baseline or {}
     answer = _repair(_text(result.data, prompts.ANSWER) or baseline["summary"], plan.packs)
     summary = _text(result.data, prompts.SUMMARY) or baseline["summary"]
-    analysis = _with_risks(_text(result.data, prompts.ANALYSIS) or baseline["analysis"], result.data)
+    analysis = _text(result.data, prompts.ANALYSIS) or baseline["analysis"]
     return {
         "answer": answer,
         "verdict": plan.verdict,
@@ -561,6 +577,10 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
         "analysis": analysis,
         "report": plan.pack,
         "contractor": plan.contractor,
+        "key_risks": _strings(result.data, prompts.KEY_RISKS) or _fallback_risks(plan.packs),
+        "positives": _strings(result.data, prompts.POSITIVES),
+        "followups": plan.followups,
+        **_badge(plan.pack),
         "degraded": False,
         "notice": _join(plan.notice, PARTIAL_NOTICE if result.problems else None),
         REPLY_TOKENS: _completion(result.usage, answer),
@@ -591,6 +611,7 @@ def _degraded(plan: _Plan, detail: str, prefix: str = "") -> dict[str, Any]:
     notice = f"{detail} {DEGRADED_TAIL}"
     if plan.scenario == agent_router.COMPARE:
         return {"answer": answer, "degraded": True, "notice": notice,
+                "per_contractor": _per_contractor({}, plan.packs), "comparison": plan.comparison,
                 REPLY_TOKENS: tokens.estimate(answer)}
     if plan.scenario == agent_router.CLARIFY:
         last = plan.last or {}
@@ -603,6 +624,9 @@ def _degraded(plan: _Plan, detail: str, prefix: str = "") -> dict[str, Any]:
             "contractor": plan.contractor,
             "degraded": True,
             "notice": notice,
+            "key_risks": [],
+            "positives": [],
+            **_badge(last.get("report")),
             REPLY_TOKENS: tokens.estimate(answer),
         }
     baseline = plan.baseline or {}
@@ -617,6 +641,10 @@ def _degraded(plan: _Plan, detail: str, prefix: str = "") -> dict[str, Any]:
         "contractor": plan.contractor,
         "degraded": True,
         "notice": notice,
+        "key_risks": _fallback_risks(plan.packs),
+        "positives": [],
+        "followups": plan.followups,
+        **_badge(plan.pack),
         REPLY_TOKENS: tokens.estimate(answer),
     }
 
@@ -654,6 +682,19 @@ def _persist(plan: _Plan, outcome: dict[str, Any]) -> dict[str, Any]:
                 "scenario": plan.scenario,
                 "inn": (outcome.get("contractor") or {}).get("inn"),
                 "degraded": outcome.get("degraded", False),
+                # Структурные блоки кладутся в историю целиком: после перезагрузки
+                # страницы сообщение обязано выглядеть так же, как в момент ответа.
+                "verdict": outcome.get("verdict"),
+                "risk_level": outcome.get("risk_level"),
+                "zsk_risk_level": outcome.get("zsk_risk_level"),
+                "key_risks": outcome.get("key_risks") or [],
+                "positives": outcome.get("positives") or [],
+                "per_contractor": outcome.get("per_contractor") or [],
+                "followups": outcome.get("followups") or [],
+                "comparison": outcome.get("comparison"),
+                # Факт-пакет нужен фронту для графиков: ряды берутся из него,
+                # отдельных запросов и токенов это не стоит (§10).
+                "report": outcome.get("report"),
                 # ИНН, возвращённые инструментами, становятся допустимыми и на
                 # следующих ходах этой сессии; MCP-функции сами stateless.
                 "_allowed_inns": list(plan.allowed_inns),
@@ -725,11 +766,55 @@ def _text(data: dict[str, Any], key: str) -> str | None:
     return value.strip() if isinstance(value, str) and value.strip() else None
 
 
-def _with_risks(analysis: str, data: dict[str, Any]) -> str:
-    risks = [item for item in data.get(prompts.KEY_RISKS) or [] if isinstance(item, str) and item.strip()]
-    if not risks:
-        return analysis
-    return analysis + "\n\nКлючевые риски:\n" + "\n".join(f"— {item}" for item in risks)
+def _strings(data: dict[str, Any], key: str) -> list[str]:
+    """Списки для человека: технические вставки вычищаются здесь, а не промптом.
+    Промпт частоту снижает, гарантии не даёт (known_issues.md §14.1)."""
+    raw = [item for item in data.get(key) or [] if isinstance(item, str) and item.strip()]
+    return sanitize.lines(raw)
+
+
+def _per_contractor(data: dict[str, Any], packs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Списки по каждому контрагенту сравнения (§9).
+
+    Порядок и состав задаёт код по packs, а не модель: пропущенного она не добавит,
+    лишнего не припишет. Не названные ею риски заполняются детерминированно.
+    """
+    by_inn = {
+        str(item.get("inn")): item
+        for item in data.get(prompts.CONTRACTORS) or []
+        if isinstance(item, dict)
+    }
+    rows = []
+    for pack in packs:
+        answer = by_inn.get(pack["inn"], {})
+        required = [text for _pattern, text in _required_mentions(pack)]
+        rows.append(
+            {
+                "inn": pack["inn"],
+                "short_name": pack["short_name"],
+                "key_risks": _strings(answer, prompts.KEY_RISKS) or required,
+                "positives": _strings(answer, prompts.POSITIVES),
+            }
+        )
+    return rows
+
+
+def _badge(pack: dict[str, Any] | None) -> dict[str, Any]:
+    """Светофоры для шапки сообщения: без них вердикт виден только в досье справа."""
+    basis = (pack or {}).get("verdict_basis") or {}
+    return {"risk_level": basis.get("risk_level"), "zsk_risk_level": basis.get("zsk_risk_level")}
+
+
+def _fallback_risks(packs: list[dict[str, Any]]) -> list[str]:
+    """Риски для деградации: те же обязательные упоминания, что проверяет починка.
+
+    Без них шаблонный ответ терял бы структуру, ради которой всё и делалось.
+    """
+    risks: list[str] = []
+    for pack in packs:
+        label = pack["short_name"] if len(packs) > 1 else ""
+        risks += [sanitize.join(label, text) for _pattern, text in _required_mentions(pack)]
+    return risks
 
 
 def _completion(usage: dict[str, Any], answer: str) -> int:
@@ -749,11 +834,11 @@ def _completion(usage: dict[str, Any], answer: str) -> int:
 def _repair(answer: str, packs: list[dict[str, Any]]) -> str:
     missing: list[str] = []
     for pack in packs:
-        label = f"{pack['short_name']}: " if len(packs) > 1 else ""
+        label = pack["short_name"] if len(packs) > 1 else ""
         for pattern, text in _required_mentions(pack):
             if pattern and re.search(pattern, answer, re.IGNORECASE):
                 continue
-            missing.append(f"{label}{text}")
+            missing.append(sanitize.join(label, text))
     if not missing:
         return answer
     return answer + "\n\nТакже обратите внимание:\n" + "\n".join(f"— {item}" for item in missing)
