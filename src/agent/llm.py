@@ -304,6 +304,8 @@ def check_shape(data: Any, schema: dict) -> list[str]:
                 problems.append(f"{key}: ожидался список")
             elif items == "string" and not all(isinstance(item, str) for item in value):
                 problems.append(f"{key}: ожидался список строк")
+            elif items == "object" and not all(isinstance(item, dict) for item in value):
+                problems.append(f"{key}: ожидался список объектов")
     return problems
 
 
