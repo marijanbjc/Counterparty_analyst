@@ -6,6 +6,7 @@
 
 from dataclasses import dataclass
 
+from src.agent.profiles import within_quota
 from src.core import inn as inn_module
 from src.mcp.tools.selection import MAX_ITEMS
 
@@ -39,7 +40,7 @@ def choose(
     requests_limit: int,
     max_compare: int,
 ) -> Route:
-    if requests_used >= requests_limit:
+    if not within_quota(requests_used, requests_limit):
         return Route(
             QUOTA_EXCEEDED,
             answer=(

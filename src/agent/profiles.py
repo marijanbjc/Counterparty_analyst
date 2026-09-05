@@ -18,6 +18,11 @@ FACTPACK_FULL = "full"
 BASIC_MAX_ITERATIONS = 0
 EXTENDED_MAX_ITERATIONS = 4
 
+# Ноль в конфиге читается как «без ограничения». Нужен демонстрационному
+# аккаунту: упереться в квоту посреди показа хуже, чем не показать тариф.
+# Счётчик проверок при этом продолжает считать — видно, сколько израсходовано.
+UNLIMITED = 0
+
 
 @dataclass(frozen=True)
 class ExecutionProfile:
@@ -78,3 +83,7 @@ def profile_for(tariff: str) -> ExecutionProfile:
     profiles = _profiles()
     # Неизвестный тариф деградирует в basic: опечатка не открывает платный контур.
     return profiles.get(tariff, profiles["free"])
+
+
+def within_quota(requests_used: int, requests_limit: int) -> bool:
+    return requests_limit == UNLIMITED or requests_used < requests_limit

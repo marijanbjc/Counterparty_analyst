@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
 
-from src.agent.profiles import profile_for
+from src.agent.profiles import profile_for, within_quota
 from src.core import factpack
 from src.core import inn as inn_module
 from src.db.client import repository as client_repository
@@ -31,7 +31,7 @@ def compare(payload: CompareRequest, session: DbSession, user: CurrentUser) -> C
     execution = profile_for(user.tariff)
     quota = client_repository.get_quota(session, user.id)
     requests_used = quota.requests_used if quota else 0
-    if requests_used >= execution.requests_limit:
+    if not within_quota(requests_used, execution.requests_limit):
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail=f"Лимит проверок исчерпан: {requests_used} из {execution.requests_limit}.",
