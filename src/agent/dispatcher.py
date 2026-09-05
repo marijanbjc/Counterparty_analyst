@@ -1,7 +1,7 @@
 """Вызовы инструментов модели: белый список ИНН и in-process MCP-функции.
 
 Инструменты MCP stateless и не знают сессии. Проверка ИНН живёт здесь —
-между tool_call и функцией (known_issues.md §5, architecture.md §9.1 слой 4).
+между tool_call и функцией (ARCHITECTURE.md).
 """
 
 from __future__ import annotations

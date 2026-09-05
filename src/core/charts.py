@@ -1,4 +1,4 @@
-"""Данные для графиков — изображение не строится (mcp_architecture.md §8.2)."""
+"""Данные для графиков — изображение не строится (ARCHITECTURE.md)."""
 
 RUB, COUNT, PERCENT = "RUB", "count", "percent"
 

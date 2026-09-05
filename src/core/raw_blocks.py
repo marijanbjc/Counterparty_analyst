@@ -1,5 +1,5 @@
 """Блоки отчёта, оставшиеся в contractors.raw: они не нормализованы в таблицы,
-потому что по ним не считает SQL — см. architecture.md §5."""
+потому что по ним не считает SQL (ARCHITECTURE.md)."""
 
 from collections import Counter
 
@@ -110,7 +110,7 @@ def inspections(raw: dict, recent_limit: int = 5, authority_limit: int = AUTHORI
         "by_result": dict(results),
         "by_form": dict(Counter(item["form"] for item in parsed if item["form"])),
         # Список органов не ограничивался, и один контрагент с 52 надзорными
-        # органами раздувал набор «Деятельность» вчетверо (known_issues.md §6).
+        # органами раздувал набор «Деятельность» вчетверо (ARCHITECTURE.md).
         **_authorities(parsed, authority_limit),
         "period": {"first": dates[0], "last": dates[-1]} if dates else None,
         "recent": ordered[:recent_limit],
