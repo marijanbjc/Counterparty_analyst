@@ -1,4 +1,5 @@
 import type {
+  AlternativesResponse,
   ChatResponse,
   CompareResult,
   DataSet,
@@ -86,6 +87,14 @@ export const api = {
     return request<Session>(
       `/api/sessions/${sessionId}`,
       { method: 'PATCH', body: JSON.stringify({ role_preset }) },
+      token,
+    )
+  },
+
+  alternatives(token: string, inn: string, sameRegion: boolean) {
+    return request<AlternativesResponse>(
+      '/api/alternatives',
+      { method: 'POST', body: JSON.stringify({ inn, same_region: sameRegion }) },
       token,
     )
   },
@@ -217,12 +226,8 @@ export const api = {
     }
   },
 
-  contractor(token: string, inn: string, role: RolePreset) {
-    return request<FactPack>(
-      `/api/contractors/${inn}?role=${role}`,
-      {},
-      token,
-    )
+  contractor(token: string, inn: string) {
+    return request<FactPack>(`/api/contractors/${inn}`, {}, token)
   },
 
   compare(token: string, inns: string[], role_preset: RolePreset) {

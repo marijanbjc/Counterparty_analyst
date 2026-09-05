@@ -36,6 +36,34 @@ export type ContractorBlocks = {
   positives: string[]
 }
 
+/** Подсказка следующего шага. 'prompt' отправляется сразу — вопрос уже полный;
+ *  'draft' подставляется в поле, потому что клиенту надо дописать второй ИНН;
+ *  'action' запускает свой сценарий интерфейса (пока только подбор
+ *  альтернативы). Собираются кодом на бэкенде, токенов не стоят. */
+export type NextStep = {
+  code: string
+  label: string
+  kind: 'prompt' | 'draft' | 'action'
+  prompt: string | null
+}
+
+/** Кандидат из подбора альтернативы. Оценки банка здесь нет намеренно:
+ *  её клиент получает обычной проверкой, назвав ИНН сам. */
+export type Alternative = {
+  inn: string
+  short_name: string
+  region: string | null
+  main_okved: string | null
+}
+
+export type AlternativesResponse = {
+  items: Alternative[]
+  same_region: boolean
+  region: string | null
+  can_widen: boolean
+  okved: string | null
+}
+
 export type MessageBlocks = {
   /** Кого касается ответ: имя и ИНН уходят в шапку сообщения. */
   subject?: string | null
@@ -46,6 +74,10 @@ export type MessageBlocks = {
   key_risks?: string[]
   positives?: string[]
   followups?: Followup[]
+  next_steps?: NextStep[]
+  /** Темы, реально дочитанные за этот ход: без них кнопка выглядела
+   *  сломанной на контрагенте с пустым разделом. */
+  datasets?: string[]
   comparison?: Comparison | null
   per_contractor?: ContractorBlocks[]
   report?: FactPack
@@ -148,6 +180,7 @@ export type ChatResponse = {
   key_risks: string[]
   positives: string[]
   followups: Followup[]
+  next_steps: NextStep[]
   per_contractor: ContractorBlocks[]
   comparison: Comparison | null
   risk_level: RiskLevel

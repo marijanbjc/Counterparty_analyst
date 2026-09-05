@@ -5,8 +5,11 @@ import { Textarea } from '@alfalab/core-components/textarea'
 
 import { api, ApiError } from '../api'
 import { MoreCharts, RevenueChart } from './Charts'
-import { compactMoney, date, entityKind, money, number, percent, riskName, riskTone, verdictTone, zskName } from '../format'
+import { Hint, Term } from './Hint'
+import type { TermKey } from '../glossary'
+import { compactMoney, date, entityKind, money, number, percent, riskName, riskTone, statusName, verdictTone, zskName } from '../format'
 import type {
+  AlternativesResponse,
   AuthState,
   Comparison,
   ComparisonRow,
@@ -15,6 +18,7 @@ import type {
   FactPack,
   Message,
   MessageBlocks,
+  NextStep,
   Profile,
   RolePreset,
   Session,
@@ -22,20 +26,126 @@ import type {
 
 // Подписи описывают, что клиент увидит, а не как раздел называется внутри:
 // значения (value) — это пресеты бэкенда и меняться от подписей не должны.
-const ROLES: Array<{ value: RolePreset; label: string }> = [
-  { value: 'general', label: 'Общий обзор' },
-  { value: 'finance', label: 'Финансы' },
-  { value: 'legal', label: 'Суды и взыскания' },
-  { value: 'security', label: 'Статус и владельцы' },
-  { value: 'activity', label: 'Чем занимается' },
+// hint выводится при наведении: без него кнопки читались как набор ярлыков,
+// и клиент не понимал, что произойдёт по нажатию (client_path_ideas.md §3).
+const ROLES: Array<{ value: RolePreset; label: string; hint: string }> = [
+  { value: 'general', label: 'Общий обзор', hint: 'Сбалансированный разбор без перекоса в одну тему' },
+  { value: 'finance', label: 'Финансы', hint: 'Акцент на деньгах: динамика выручки, обязательства, долговая нагрузка' },
+  { value: 'legal', label: 'Суды и взыскания', hint: 'Акцент на действующих взысканиях, истории производств и арбитраже' },
+  { value: 'security', label: 'Статус и владельцы', hint: 'Акцент на статусе в ЕГРЮЛ, отметках ФНС, владельцах и связях' },
+  { value: 'activity', label: 'Чем занимается', hint: 'Акцент на видах деятельности, лицензиях, проверках и закупках' },
 ]
 
-const DATASETS: Array<{ value: DataSet; label: string }> = [
-  { value: 'finance', label: 'Финансы' },
-  { value: 'legal', label: 'Суды и взыскания' },
-  { value: 'security', label: 'Статус и владельцы' },
-  { value: 'activity', label: 'Чем занимается' },
-  { value: 'followups', label: 'Что запросить у контрагента' },
+/** Темы разбора — кнопки под полем ввода (client_path_ideas.md §3).
+ *
+ *  В шестерёнке их больше нет: там они дублировали эти же кнопки, и трёх групп
+ *  элементов управления никто не различал. `draft` подставляется в поле готовой
+ *  фразой с ИНН — клиенту остаётся нажать «отправить», а в истории диалога
+ *  видно, о чём он спрашивал.
+ *
+ *  Набор followups убран: список «что запросить» считается детерминированно
+ *  и попадает в ответ ВСЕГДА, независимо от кнопки. Кнопка лишь скармливала
+ *  тот же список модели — на экране от неё ничего не менялось.
+ */
+const DATASETS: Array<{ value: DataSet; label: string; hint: string; draft: string }> = [
+  {
+    value: 'finance',
+    label: 'Финансы',
+    hint: 'Подниму отчётность за три года, чистые активы и долговую нагрузку и разберу их в ответе',
+    draft: 'Разбери финансы',
+  },
+  {
+    value: 'legal',
+    label: 'Суды и взыскания',
+    hint: 'Подниму действующие взыскания отдельно от истории и арбитраж по годам',
+    draft: 'Проверь суды и взыскания',
+  },
+  {
+    value: 'security',
+    label: 'Статус и владельцы',
+    hint: 'Подниму статус в ЕГРЮЛ, отметки ФНС, владельцев и связанные компании',
+    draft: 'Проверь статус и владельцев',
+  },
+  {
+    value: 'activity',
+    label: 'Чем занимается',
+    hint: 'Подниму виды деятельности, лицензии, проверки и госзакупки',
+    draft: 'Расскажи, чем занимается',
+  },
+]
+
+/** Карточки на стартовом экране (client_path_ideas.md §1).
+ *
+ *  Карточка называет действие и результат, а не жизненную ситуацию клиента:
+ *  каждая — готовая комбинация «сценарий + фокус + набор», то есть то, что
+ *  система и так умеет, просто выбранное одним кликом. Приставки «хочу…» нет
+ *  намеренно — карточка сама по себе и есть выбор.
+ */
+type ScenarioCard = {
+  key: string
+  title: string
+  hint: string
+  role: RolePreset
+  datasets: DataSet[]
+  draft: string
+  primary: boolean
+}
+
+const SCENARIOS: ScenarioCard[] = [
+  {
+    key: 'check',
+    title: 'Проверить контрагента',
+    hint: 'Вердикт, риски, сильные стороны и динамика выручки по одному ИНН',
+    role: 'general',
+    datasets: [],
+    draft: 'Проверь контрагента по ИНН ',
+    primary: true,
+  },
+  {
+    key: 'compare',
+    title: 'Сравнить нескольких',
+    hint: 'Таблица по 2–10 ИНН: деньги, суды, взыскания и вердикт по каждому',
+    role: 'general',
+    datasets: [],
+    draft: 'Сравни контрагентов по ИНН: ',
+    primary: true,
+  },
+  {
+    key: 'finance',
+    title: 'Оценить финансы и долги',
+    hint: 'Выручка и прибыль по годам, чистые активы, долговая нагрузка',
+    role: 'finance',
+    datasets: ['finance'],
+    draft: 'Оцени финансовое состояние контрагента по ИНН ',
+    primary: true,
+  },
+  {
+    key: 'legal',
+    title: 'Проверить суды и взыскания',
+    hint: 'Действующие взыскания отдельно от истории, арбитраж по годам',
+    role: 'legal',
+    datasets: ['legal'],
+    draft: 'Проверь суды и взыскания у контрагента с ИНН ',
+    primary: true,
+  },
+  {
+    key: 'security',
+    title: 'Узнать, кто за компанией',
+    hint: 'Статус в ЕГРЮЛ, отметки ФНС, владельцы, связанные компании',
+    role: 'security',
+    datasets: [],
+    draft: 'Кто стоит за компанией с ИНН ',
+    primary: false,
+  },
+  {
+    key: 'activity',
+    title: 'Узнать, чем занимается',
+    hint: 'Виды деятельности, лицензии, проверки и госзакупки',
+    role: 'activity',
+    datasets: ['activity'],
+    draft: 'Расскажи, чем занимается контрагент с ИНН ',
+    primary: false,
+  },
 ]
 
 // Потолок наборов за ход — ExecutionProfile.max_buttons на бэкенде (§8.4).
@@ -270,25 +380,59 @@ function ContractorsPage({ aiPanel }: { aiPanel: ReactNode }) {
 // светофоры — в конец. Вердикт стоит отдельной колонкой сразу за именем: он
 // один отвечает на вопрос пользователя, а риск и ЗСК его лишь обосновывают
 // (known_issues.md §18).
-const COMPARE_COLUMNS: Array<{ key: string; label: string; render: (row: ComparisonRow) => string }> = [
+type CompareColumn = {
+  key: string
+  label: string
+  term?: TermKey
+  render: (row: ComparisonRow) => string
+}
+
+const COMPARE_COLUMNS: CompareColumn[] = [
   { key: 'revenue', label: 'Выручка', render: (r) => compactMoney(r.revenue as number | null) },
   { key: 'profit', label: 'Прибыль', render: (r) => compactMoney(r.profit as number | null) },
-  { key: 'net_assets', label: 'Чистые активы', render: (r) => compactMoney(r.net_assets as number | null) },
+  {
+    key: 'net_assets',
+    label: 'Чистые активы',
+    term: 'net_assets',
+    render: (r) => compactMoney(r.net_assets as number | null),
+  },
   {
     key: 'debt_to_net_assets',
     label: 'Долг к активам',
+    term: 'debt_to_net_assets',
     render: (r) => percent(r.debt_to_net_assets as number | null),
   },
-  { key: 'execproc_active', label: 'Взыскания', render: (r) => number(r.execproc_active as number | null) },
-  { key: 'arbitration_total', label: 'Судов всего', render: (r) => number(r.arbitration_total as number | null) },
+  {
+    key: 'execproc_active',
+    label: 'Взыскания',
+    term: 'execproc_active',
+    render: (r) => number(r.execproc_active as number | null),
+  },
+  {
+    key: 'arbitration_total',
+    label: 'Судов всего',
+    term: 'arbitration_pending',
+    render: (r) => number(r.arbitration_total as number | null),
+  },
   {
     key: 'arbitration_pending_defendant',
     label: 'Текущих исков',
+    term: 'arbitration_pending',
     render: (r) => number(r.arbitration_pending_defendant as number | null),
   },
-  { key: 'negative_factors', label: 'Негативных', render: (r) => number(r.negative_factors as number | null) },
-  { key: 'zsk_risk_level', label: 'ЗСК', render: (r) => zskName(r.zsk_risk_level as never) },
-  { key: 'risk_level', label: 'Риск', render: (r) => riskName((r.risk_level as never) ?? null) },
+  {
+    key: 'negative_factors',
+    label: 'Негативных',
+    term: 'negative_factors',
+    render: (r) => number(r.negative_factors as number | null),
+  },
+  { key: 'zsk_risk_level', label: 'ЗСК', term: 'zsk', render: (r) => zskName(r.zsk_risk_level as never) },
+  {
+    key: 'risk_level',
+    label: 'Риск',
+    term: 'risk_level',
+    render: (r) => riskName((r.risk_level as never) ?? null),
+  },
 ]
 
 function ComparisonTable({ data }: { data: Comparison }) {
@@ -302,9 +446,15 @@ function ComparisonTable({ data }: { data: Comparison }) {
           <thead>
             <tr>
               <th scope="col">Контрагент</th>
-              <th scope="col">Вердикт</th>
+              <th scope="col"><Term term="verdict">Вердикт</Term></th>
               {COMPARE_COLUMNS.map((column) => (
-                <th key={column.key} scope="col">{column.label}</th>
+                <th key={column.key} scope="col">
+                  {column.term ? (
+                    <Term term={column.term}>{column.label}</Term>
+                  ) : (
+                    column.label
+                  )}
+                </th>
               ))}
             </tr>
           </thead>
@@ -339,6 +489,138 @@ function ComparisonTable({ data }: { data: Comparison }) {
       )}
       {(data.not_found ?? []).length > 0 && (
         <p className="msg-missing">Нет в базе: {data.not_found!.join(', ')}</p>
+      )}
+    </div>
+  )
+}
+
+/** Подбор альтернативы (client_path_ideas.md §7).
+ *
+ *  Кандидаты отбираются по открытым реестрам, оценки банка в ответе нет:
+ *  её клиент получает обычной проверкой, нажав «Проверить». Сколько нашлось
+ *  всего, не показываем — это раскрыло бы объём базы.
+ */
+function Alternatives({ inn, token, onPick }: {
+  inn: string
+  token: string
+  onPick: (inn: string) => void
+}) {
+  const [data, setData] = useState<AlternativesResponse | null>(null)
+  const [busy, setBusy] = useState(true)
+  const [failed, setFailed] = useState(false)
+
+  const load = async (sameRegion: boolean) => {
+    setBusy(true)
+    setFailed(false)
+    try {
+      setData(await api.alternatives(token, inn, sameRegion))
+    } catch {
+      setFailed(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Подбор начинается сразу по нажатию подсказки: вторая кнопка с тем же
+  // текстом сбивала с толку — клиент не понимал, что от него хотят (§7).
+  useEffect(() => {
+    void load(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inn])
+
+  if (failed) {
+    return (
+      <div className="alt-block">
+        <p className="alt-empty">Не удалось подобрать.</p>
+        <Button view="secondary" size={32} onClick={() => void load(true)}>Попробовать снова</Button>
+      </div>
+    )
+  }
+
+  if (data === null) {
+    return <div className="alt-block"><p className="alt-empty">Подбираю…</p></div>
+  }
+
+  const where = data.same_region && data.region ? `в регионе «${data.region}»` : 'по всей стране'
+  return (
+    <div className="alt-block">
+      {data.items.length > 0 ? (
+        <>
+          <p className="alt-lead">
+            Вот кто ещё занимается тем же {where}. Все — действующие компании,
+            без банкротства, без действующих взысканий и без незавершённых исков
+            к ним. По уровню риска я их пока не смотрел.
+          </p>
+          <div className="alt-cards">
+            {data.items.map((item) => (
+              <div key={item.inn} className="alt-card">
+                <b>{item.short_name}</b>
+                <small>
+                  ИНН {item.inn}
+                  {item.region ? ` · ${item.region}` : ''}
+                  {item.main_okved ? ` · ${item.main_okved}` : ''}
+                </small>
+                <Button view="primary" size={32} loading={busy} onClick={() => onPick(item.inn)}>
+                  Проверить
+                </Button>
+              </div>
+            ))}
+          </div>
+          <p className="alt-note">
+            Нажмите «Проверить» — разберу компанию так же, как первую: с вердиктом,
+            рисками и оценкой банка.
+          </p>
+        </>
+      ) : (
+        <p className="alt-empty">
+          {data.same_region && data.region
+            ? `В регионе «${data.region}» подходящих компаний того же профиля не нашлось.`
+            : 'Подходящих компаний того же профиля не нашлось.'}
+        </p>
+      )}
+      {data.can_widen && (
+        <Button view="secondary" size={32} loading={busy} onClick={() => void load(false)}>
+          Поискать по всей стране
+        </Button>
+      )}
+    </div>
+  )
+}
+
+/** Подсказки следующего шага (§4). Клиент не изобретает вопрос, а выбирает. */
+function NextSteps({ steps, inn, token, onSend, onDraft }: {
+  steps: NextStep[]
+  inn: string | null
+  token: string
+  onSend: (text: string) => void
+  onDraft: (text: string) => void
+}) {
+  const [openAction, setOpenAction] = useState<string | null>(null)
+  if (steps.length === 0) return null
+  const pick = (step: NextStep) => {
+    if (step.kind === 'action') return setOpenAction(step.code)
+    const text = step.prompt ?? step.label
+    // draft — единственный случай, когда вопрос неполон: клиенту надо
+    // дописать второй ИНН, отправлять такое сразу нельзя.
+    return step.kind === 'draft' ? onDraft(text) : onSend(text)
+  }
+  return (
+    <div className="next-steps">
+      <div className="next-steps-row">
+        {steps.map((step) => (
+          <Button
+            key={step.code}
+            view="transparent"
+            size={32}
+            className="next-step"
+            onClick={() => pick(step)}
+          >
+            {step.label}
+          </Button>
+        ))}
+      </div>
+      {openAction === 'alternatives' && inn && (
+        <Alternatives inn={inn} token={token} onPick={(value) => onSend(`Проверь контрагента по ИНН ${value}`)} />
       )}
     </div>
   )
@@ -388,6 +670,66 @@ function BlockList({ title, tone, items, empty }: {
   )
 }
 
+/** Стартовый экран (client_path_ideas.md §2).
+ *
+ *  Было «Кого проверим? Введите ИНН» — клиент не знал ни об одной возможности
+ *  системы. Четыре блока: что это, с чего начать, с чем помогу, чего не умею.
+ *  Последний кажется лишним, но экономит разочарование на втором сообщении
+ *  и сразу задаёт рамку ответственности.
+ *
+ *  Примеров с реальными ИНН здесь нет намеренно: подставить клиенту компанию
+ *  из базы значит показать её состав.
+ */
+function WelcomeScreen({ maxDatasets, onPick }: {
+  maxDatasets: number
+  onPick: (card: ScenarioCard) => void
+}) {
+  const [all, setAll] = useState(false)
+  const cards = all ? SCENARIOS : SCENARIOS.filter((card) => card.primary)
+  return (
+    <div className="ai-welcome">
+      <h3>Разберу отчёт по контрагенту и отвечу на вопросы по нему</h3>
+      <p className="welcome-start">
+        Вставьте ИНН организации или предпринимателя — или несколько через запятую,
+        если нужно сравнить.
+      </p>
+
+      <div className="welcome-cards">
+        {cards.map((card) => (
+          <button key={card.key} type="button" className="welcome-card" onClick={() => onPick(card)}>
+            <b>{card.title}</b>
+            <small>{card.hint}</small>
+          </button>
+        ))}
+      </div>
+      {!all && (
+        <Button view="transparent" size={32} onClick={() => setAll(true)}>
+          Показать ещё {SCENARIOS.length - cards.length}
+        </Button>
+      )}
+
+      {/* Сноски о возможностях и границах свёрнуты: на старте важнее сценарии,
+          а развёрнутыми списками они срезали карточки за нижний край. */}
+      <details className="welcome-more">
+        <summary>Что ещё есть и чего не умею</summary>
+        <ul className="welcome-notes">
+          <li>
+            Кнопки под полем ввода поднимают дополнительные сведения по теме и
+            сами подставляют вопрос —
+            {maxDatasets === 1 ? ' по одной теме на сообщение' : ` до ${maxDatasets} тем на сообщение`}.
+          </li>
+          <li>В шестерёнке — на чём сосредоточиться: это действует на всю проверку.</li>
+          <li>Искать по названию, отрасли или региону не умею — работаю по ИНН.</li>
+          <li>
+            Оценивать конкретную сделку тоже не берусь: показываю, что видно
+            в отчёте, решение остаётся за вами.
+          </li>
+        </ul>
+      </details>
+    </div>
+  )
+}
+
 /** Шапка сообщения. Вердикт без имени контрагента безадресен: в сессии их
  *  несколько, а ответ на уточнение вообще не называет, о ком он (§15.6). */
 function MessageHeader({ blocks }: { blocks: MessageBlocks }) {
@@ -399,14 +741,20 @@ function MessageHeader({ blocks }: { blocks: MessageBlocks }) {
       {blocks.verdict && (
         <span className={`reliability-badge reliability-${verdictTone(blocks.verdict)}`}>
           {blocks.verdict}
+          <Hint term="verdict" />
         </span>
       )}
       <small>
         {subject && <b className="msg-subject">{subject}</b>}
         {subject && blocks.inn ? ` · ИНН ${blocks.inn}` : ''}
-        {blocks.verdict
-          ? `${subject ? ' · ' : ''}${riskName(blocks.risk_level ?? null)} · ЗСК ${zskName(blocks.zsk_risk_level)}`
-          : ''}
+        {blocks.verdict && (
+          <>
+            {subject ? ' · ' : ''}
+            <Term term="risk_level">{riskName(blocks.risk_level ?? null)}</Term>
+            {' · '}
+            <Term term="zsk">ЗСК {zskName(blocks.zsk_risk_level)}</Term>
+          </>
+        )}
       </small>
     </header>
   )
@@ -414,10 +762,13 @@ function MessageHeader({ blocks }: { blocks: MessageBlocks }) {
 
 /** Сообщение ассистента: шапка с вердиктом, текст, затем структурные блоки.
  *  Один путь отрисовки для свежего ответа и для истории — блоки приходят в meta. */
-function AssistantMessage({ content, blocks, degraded }: {
+function AssistantMessage({ content, blocks, degraded, token, onSend, onDraft }: {
   content: string
   blocks: MessageBlocks
   degraded?: boolean
+  token: string
+  onSend: (text: string) => void
+  onDraft: (text: string) => void
 }) {
   const risks = blocks.key_risks ?? []
   const positives = blocks.positives ?? []
@@ -427,6 +778,9 @@ function AssistantMessage({ content, blocks, degraded }: {
     <>
       <MessageHeader blocks={blocks} />
       <p>{content}</p>
+      {(blocks.datasets ?? []).length > 0 && (
+        <p className="msg-datasets">Дочитал по вашей отметке: {(blocks.datasets ?? []).join(', ').toLowerCase()}</p>
+      )}
       {blocks.report && <RevenueChart pack={blocks.report} />}
       {blocks.comparison && <ComparisonTable data={blocks.comparison} />}
       {perContractor.length > 0 ? (
@@ -451,7 +805,14 @@ function AssistantMessage({ content, blocks, degraded }: {
         </section>
       )}
       {blocks.report && <MoreCharts pack={blocks.report} />}
-      {degraded && <small>Детерминированный отчёт · без языковой модели</small>}
+      {degraded && <small>ИИ-разбор недоступен, показаны данные отчёта</small>}
+      <NextSteps
+        steps={blocks.next_steps ?? []}
+        inn={blocks.inn ?? null}
+        token={token}
+        onSend={onSend}
+        onDraft={onDraft}
+      />
     </>
   )
 }
@@ -476,13 +837,13 @@ function Dossier({ pack }: { pack: FactPack | null }) {
         <h3>{pack.short_name}</h3>
         <p>{entityKind(pack.profile.entity_kind)} · ИНН {pack.inn} · ОГРН {pack.ogrn}</p>
         <div className="zsk-line">
-          <span>Оценка ЗСК</span>
+          <span><Term term="zsk">Оценка ЗСК</Term></span>
           <b>{pack.verdict_basis.zsk_risk_level || 'Нет данных'}</b>
         </div>
       </header>
       {pack.discrepancies.length > 0 && (
         <section className="report-warning">
-          <strong>Требует внимания</strong>
+          <strong><Term term="discrepancies">Требует внимания</Term></strong>
           {pack.discrepancies.map((item) => <p key={item.code}>{item.text}</p>)}
         </section>
       )}
@@ -496,22 +857,37 @@ function Dossier({ pack }: { pack: FactPack | null }) {
       <details open>
         <summary>Риски и споры</summary>
         <dl>
-          <div><dt>Активные взыскания</dt><dd>{number(pack.execution_proceedings.active)}</dd></div>
+          <div>
+            <dt><Term term="execproc_active">Действующие взыскания</Term></dt>
+            <dd>{number(pack.execution_proceedings.active)}</dd>
+          </div>
           <div><dt>Сумма взысканий</dt><dd>{money(pack.execution_proceedings.active_amount)}</dd></div>
-          <div><dt>Арбитраж</dt><dd>{number(pack.arbitration.total_count)}</dd></div>
-          <div><dt>Негативные факторы</dt><dd>{number(pack.risk_factors.negative_total)}</dd></div>
+          <div>
+            <dt><Term term="arbitration_pending">Судебных дел, всего</Term></dt>
+            <dd>{number(pack.arbitration.total_count)}</dd>
+          </div>
+          <div>
+            <dt><Term term="negative_factors">Негативные факторы</Term></dt>
+            <dd>{number(pack.risk_factors.negative_total)}</dd>
+          </div>
         </dl>
       </details>
       <details>
         <summary>Общая информация</summary>
         <dl>
-          <div><dt>Статус</dt><dd>{pack.profile.status || 'Нет данных'}</dd></div>
+          <div>
+            <dt><Term term="egrul_status">Статус</Term></dt>
+            <dd>{statusName(pack.profile.status)}</dd>
+          </div>
           <div><dt>Регистрация</dt><dd>{date(pack.profile.registered)}</dd></div>
           <div><dt>Руководитель</dt><dd>{pack.profile.auth_person?.name || 'Нет данных'}</dd></div>
-          <div><dt>ОКВЭД</dt><dd>{pack.profile.main_okved.description || 'Нет данных'}</dd></div>
+          <div>
+            <dt><Term term="okved">Вид деятельности</Term></dt>
+            <dd>{pack.profile.main_okved.description || 'Нет данных'}</dd>
+          </div>
         </dl>
       </details>
-      <footer>Данные на {date(pack.as_of)}</footer>
+      <footer><Term term="as_of">Данные на {date(pack.as_of)}</Term></footer>
     </aside>
   )
 }
@@ -546,6 +922,12 @@ function AiPanel({
   const [stage, setStage] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
+  // Карточка на старте подставляет черновик — курсор должен встать сразу
+  // за ним, чтобы клиенту оставалось только вписать ИНН.
+  const composerRef = useRef<HTMLTextAreaElement>(null)
+  // Текст, подставленный кнопкой темы: по нему отличаем свой черновик от того,
+  // что клиент написал сам, — чужое не затираем и не чистим.
+  const draftRef = useRef('')
   const role = activeSession?.role_preset || 'general'
   const maxDatasets = MAX_DATASETS[profile?.profile ?? ''] ?? MAX_DATASETS.basic
   const orderedMessages = useMemo(
@@ -587,18 +969,41 @@ function AiPanel({
     }
   }
 
-  const toggleDataset = (value: DataSet) => {
+  /** Выбор темы под полем ввода.
+   *
+   *  Кроме отметки набора подставляет готовую фразу с ИНН уже проверенного
+   *  контрагента: раньше клиенту приходилось вводить ИНН заново на каждую
+   *  тему, и в истории диалога оставалось голое число (§3, §11).
+   *
+   *  Черновик правится только пока клиент его не тронул: `draftRef` помнит,
+   *  что подставили мы, и чужой текст затирать не даёт.
+   */
+  const pickDataset = (item: (typeof DATASETS)[number]) => {
+    const checked = datasets.includes(item.value)
     setDatasets((items) => (
-      items.includes(value)
-        ? items.filter((item) => item !== value)
-        : items.length < maxDatasets ? [...items, value] : items
+      checked
+        ? items.filter((value) => value !== item.value)
+        : items.length < maxDatasets ? [...items, item.value] : items
     ))
+    const ours = message === '' || message === draftRef.current
+    if (!ours) return
+    const text = checked ? '' : `${item.draft} ${currentPack?.inn ?? ''}`.trim()
+    draftRef.current = text
+    setMessage(text)
+    if (text) composerRef.current?.focus()
   }
 
-  const submit = async (event: FormEvent) => {
+  const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (!activeSession || !message.trim() || sending) return
-    const content = message.trim()
+    void send(message)
+  }
+
+  /** Отправка произвольного текста, а не только содержимого поля ввода:
+   *  подсказка следующего шага и кнопка «Проверить» шлют готовый вопрос
+   *  сразу, без промежуточного клика по «отправить» (§4, §7). */
+  const send = async (text: string) => {
+    if (!activeSession || !text.trim() || sending) return
+    const content = text.trim()
     const requestSessionId = activeSession.id
     const controller = new AbortController()
     abortRef.current = controller
@@ -723,14 +1128,15 @@ function AiPanel({
                 </Button>
               )}
               {!loading && orderedMessages.length === 0 && (
-                <div className="ai-welcome">
-                  <span><Icon name="spark" size={24} /></span>
-                  <h3>Кого проверим?</h3>
-                  <p>Введите ИНН организации или предпринимателя. Отчёт появится справа.</p>
-                  <Button view="secondary" size={40} onClick={() => setMessage('Проверь контрагента по ИНН ')}>
-                    Ввести ИНН
-                  </Button>
-                </div>
+                <WelcomeScreen
+                  maxDatasets={maxDatasets}
+                  onPick={(card) => {
+                    setMessage(card.draft)
+                    setDatasets(card.datasets.slice(0, maxDatasets))
+                    void changeRole(card.role)
+                    composerRef.current?.focus()
+                  }}
+                />
               )}
               {orderedMessages.map((item) => (
                 <article key={item.id} className={`ai-message ai-message-${item.role}`}>
@@ -740,6 +1146,12 @@ function AiPanel({
                       content={item.content}
                       blocks={item.meta ?? {}}
                       degraded={item.meta?.degraded}
+                      token={auth.token}
+                      onSend={(text) => void send(text)}
+                      onDraft={(text) => {
+                        setMessage(text)
+                        composerRef.current?.focus()
+                      }}
                     />
                   ) : (
                     <p>{item.content}</p>
@@ -766,15 +1178,13 @@ function AiPanel({
             <form className="ai-composer" onSubmit={submit}>
               {error && <div className="composer-error" role="alert">{error}</div>}
               {notice && <div className="composer-notice" role="status">{notice}</div>}
-              <div>
+              <div className="composer-row">
                 <div className="composer-settings" ref={settingsRef}>
                   <Button
                     view="transparent"
                     size={48}
                     className="settings-button"
-                    aria-label={datasets.length > 0
-                      ? `Настройки анализа, выбрано наборов: ${datasets.length}`
-                      : 'Настройки анализа'}
+                    aria-label="На чём сосредоточиться в разборе"
                     aria-haspopup="menu"
                     aria-expanded={settingsOpen}
                     disabled={!activeSession || sending}
@@ -782,8 +1192,6 @@ function AiPanel({
                   >
                     <Icon name="gear" size={18} />
                   </Button>
-                  {/* поповер закрыт чаще, чем открыт, — иначе выбранное невидимо */}
-                  {datasets.length > 0 && <span className="settings-count" aria-hidden="true">{datasets.length}</span>}
                   {settingsOpen && (
                     <div className="settings-popover" role="menu">
                       <p>На чём сосредоточиться</p>
@@ -795,6 +1203,7 @@ function AiPanel({
                           view={item.value === role ? 'primary' : 'transparent'}
                           size={32}
                           block
+                          title={item.hint}
                           onClick={() => {
                             setSettingsOpen(false)
                             void changeRole(item.value)
@@ -803,36 +1212,9 @@ function AiPanel({
                           {item.label}
                         </Button>
                       ))}
-                      <p className="settings-divider">Разобрать подробнее</p>
                       <small className="settings-note">
-                        Подниму по отмеченной теме дополнительные сведения и разберу
-                        их в ответе.
-                      </small>
-                      <div className="settings-sets">
-                        {DATASETS.map((item) => {
-                          const checked = datasets.includes(item.value)
-                          const capped = !checked && datasets.length >= maxDatasets
-                          return (
-                            <Button
-                              key={item.value}
-                              role="menuitemcheckbox"
-                              aria-checked={checked}
-                              view={checked ? 'primary' : 'transparent'}
-                              size={32}
-                              block
-                              disabled={capped}
-                              title={capped ? cappedHint(maxDatasets) : undefined}
-                              onClick={() => toggleDataset(item.value)}
-                            >
-                              {item.label}
-                            </Button>
-                          )
-                        })}
-                      </div>
-                      <small className="settings-hint">
-                        {datasets.length >= maxDatasets
-                          ? cappedHint(maxDatasets)
-                          : `Отмечено ${datasets.length} из ${maxDatasets}. Действует только на следующее сообщение.`}
+                        Действует на всю проверку, пока не смените. Темы разбора —
+                        кнопками под полем ввода.
                       </small>
                     </div>
                   )}
@@ -840,9 +1222,10 @@ function AiPanel({
                 <Textarea
                   block
                   autosize
+                  ref={composerRef}
                   minRows={1}
                   maxRows={4}
-                  placeholder="Введите ИНН и задачу проверки"
+                  placeholder="Вставьте ИНН — или несколько через запятую"
                   value={message}
                   disabled={!activeSession || sending}
                   onChange={(_, payload) => setMessage(payload.value)}
@@ -876,6 +1259,27 @@ function AiPanel({
                     <Icon name="send" size={20} />
                   </Button>
                 )}
+              </div>
+              {/* Темы разбора: все под полем ввода, из шестерёнки убраны (§3). */}
+              <div className="composer-quick" role="group" aria-label="Разобрать подробнее">
+                {DATASETS.map((item) => {
+                  const checked = datasets.includes(item.value)
+                  const capped = !checked && datasets.length >= maxDatasets
+                  return (
+                    <Button
+                      key={item.value}
+                      type="button"
+                      view={checked ? 'primary' : 'secondary'}
+                      size={32}
+                      aria-pressed={checked}
+                      disabled={capped || !activeSession || sending}
+                      title={capped ? cappedHint(maxDatasets) : item.hint}
+                      onClick={() => pickDataset(item)}
+                    >
+                      {item.label}
+                    </Button>
+                  )
+                })}
               </div>
               <small>
                 Смотрю: {ROLES.find((item) => item.value === role)?.label.toLowerCase()}.

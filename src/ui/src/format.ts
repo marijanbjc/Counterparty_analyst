@@ -45,6 +45,18 @@ export const verdictTone = (verdict: string | null | undefined) =>
     'Не рекомендуется': 'danger',
   })[verdict ?? ''] ?? 'neutral'
 
+/** Статус из ЕГРЮЛ приходит кодом. «CURRENT» на экране — тот же технический
+ *  термин, что и имена полей в тексте: по-русски лицо «действующее». */
+export const statusName = (value: string | null | undefined) =>
+  value
+    ? ({
+        CURRENT: 'Действующее',
+        LIQUIDATING: 'В процессе ликвидации',
+        LIQUIDATED: 'Ликвидировано',
+        BANKRUPT: 'Банкротство',
+      }[value] ?? value)
+    : 'Нет данных'
+
 export function entityKind(kind: string | null | undefined): string {
   if (kind === 'sole_proprietor') return 'Индивидуальный предприниматель'
   if (kind === 'organization') return 'Организация'

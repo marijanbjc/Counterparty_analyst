@@ -787,7 +787,17 @@ h3,
   transition: max-inline-size 280ms cubic-bezier(.16, 1, .3, 1);
 }
 
-.ai-composer > div:last-of-type,
+/* Кнопки тем под полем ввода. Правило раскладки обязано стоять рядом с общей
+   шириной: без display:flex они разъезжались инлайн-блоками (§3). */
+.composer-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.composer-row,
+.composer-quick,
 .ai-composer > small,
 .composer-error,
 .composer-notice {
@@ -799,7 +809,8 @@ h3,
 
 /* отчёт скрыт — диалогу отдаётся вся ширина, иначе текст висит посреди пустого окна */
 .report-collapsed .ai-thread,
-.report-collapsed .ai-composer > div:last-of-type,
+.report-collapsed .composer-row,
+.report-collapsed .composer-quick,
 .report-collapsed .ai-composer > small,
 .report-collapsed .composer-error,
 .report-collapsed .composer-notice {
@@ -823,8 +834,11 @@ h3,
   flex: 1;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
-  width: min(100%, 480px);
+  /* justify-content: center убран: экран теперь с карточками и списками,
+     по центру он упирался в края и начинал прокручиваться (§2). */
+  justify-content: flex-start;
+  width: min(100%, 560px);
+  padding-block: 8px 24px;
   margin-inline: auto;
 }
 
@@ -841,16 +855,101 @@ h3,
 
 .ai-welcome h3 {
   margin: 0;
-  font-size: 30px;
-  letter-spacing: -0.04em;
+  font-size: 24px;
+  line-height: 1.25;
+  letter-spacing: -0.03em;
 }
 
 .ai-welcome p {
-  max-width: 430px;
+  max-width: 480px;
   margin: 12px 0 22px;
   color: var(--ab-muted);
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* --- Стартовый экран: карточки сценариев и списки (client_path_ideas.md §1–2) --- */
+
+/* Сноски о возможностях свёрнуты: развёрнутыми они срезали карточки
+   за нижний край стартового экрана (§2). */
+.welcome-more {
+  width: 100%;
+  margin-top: 18px;
+}
+
+.welcome-more > summary {
+  cursor: pointer;
+  color: var(--ab-muted);
+  font-size: 12px;
+  list-style: none;
+}
+
+.welcome-more > summary::-webkit-details-marker { display: none; }
+
+.welcome-more > summary::before {
+  content: '▸ ';
+  display: inline-block;
+  transition: transform 120ms ease;
+}
+
+.welcome-more[open] > summary::before { content: '▾ '; }
+.welcome-more > summary:hover { color: var(--ab-ink); }
+
+.ai-welcome .welcome-notes {
+  margin-top: 10px;
+}
+
+/* Карточки — главное на экране, поэтому идут сразу под подзаголовком. */
+.welcome-cards {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 13px 14px;
+  border: 1px solid var(--ab-line);
+  border-radius: 11px;
+  background: var(--ab-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.welcome-card:hover,
+.welcome-card:focus-visible {
+  border-color: var(--ab-red);
+  background: var(--ab-surface-tint);
+}
+
+.welcome-card b {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.welcome-card small {
+  color: var(--ab-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ai-welcome .welcome-notes {
+  width: 100%;
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ab-muted);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .ai-message p {
@@ -913,7 +1012,9 @@ h3,
   border-top: 1px solid var(--ab-line);
 }
 
-.ai-composer > div:last-of-type {
+/* Класс, а не `> div:last-of-type`: селектор по позиции перехватывался любым
+   блоком, добавленным после строки ввода, и раскладка композера уезжала. */
+.composer-row {
   display: grid;
   grid-template-columns: 44px minmax(0, 1fr) 44px;
   gap: 8px;
@@ -1096,6 +1197,10 @@ h3,
 
 .reliability-badge {
   display: inline-flex;
+  /* Внутри плашки живёт сноска: без выравнивания и зазора иконка съезжала
+     и распирала плашку по вертикали. */
+  align-items: center;
+  gap: 5px;
   padding: 4px 7px;
   border-radius: 4px;
   font-size: 9px;
@@ -1389,7 +1494,7 @@ h3,
     padding: 10px;
   }
 
-  .ai-composer > div:last-of-type > :first-child {
+  .composer-row > :first-child {
     min-width: 0;
   }
 
@@ -1440,6 +1545,14 @@ h3,
 .msg-subject {
   color: var(--ab-ink);
   font-weight: 600;
+}
+
+/* Какие темы реально дочитались: у контрагента с пустым разделом ответ иначе
+   неотличим от обычного, и кнопка выглядит сломанной. */
+.msg-datasets {
+  margin: 8px 0 0;
+  color: var(--ab-muted);
+  font-size: 12px;
 }
 
 .msg-block {
@@ -1701,3 +1814,153 @@ h3,
 }
 
 .msg-contractor .msg-block { margin-top: 8px; }
+
+/* --- Сноски с определениями терминов (client_path_ideas.md §5).
+   Словарь живёт во фронте, окно рисуется порталом в body: absolute срезался
+   и прокручиваемыми контейнерами, и краями экрана. --- */
+
+.term {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ab-muted);
+  font: 600 9px/1 inherit;
+  opacity: 0.6;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.hint:hover,
+.hint:focus-visible {
+  background: var(--ab-control);
+  color: var(--ab-ink);
+  opacity: 1;
+}
+
+/* Внутри цветной плашки вердикта иконка спорила с фоном и ломала выравнивание,
+   поэтому там она наследует цвет плашки и стоит на общей базовой линии. */
+.reliability-badge .hint {
+  background: rgb(255 255 255 / 55%);
+  color: inherit;
+}
+
+.reliability-badge .hint:hover,
+.reliability-badge .hint:focus-visible {
+  background: #fff;
+}
+
+.hint-bubble {
+  position: fixed;
+  z-index: 60;
+  display: block;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: var(--ab-navy);
+  color: #fff;
+  /* Мельче и тише: подсказка сопровождает термин, а не спорит с текстом. */
+  font: 400 11px/1.4 var(--ab-font, inherit);
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 4px 14px rgb(15 23 42 / 16%);
+}
+
+/* Снизу экрана места нет — окно раскрывается вверх от иконки. */
+.hint-bubble-above {
+  transform: translateY(-100%);
+}
+
+.hint-bubble b {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+}
+
+/* --- Подсказки следующего шага и подбор альтернативы
+   (client_path_ideas.md §4, §7) --- */
+
+.next-steps {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--ab-line);
+}
+
+.next-steps-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.next-step {
+  border: 1px solid var(--ab-line) !important;
+  border-radius: 999px !important;
+}
+
+.next-step:hover {
+  border-color: var(--ab-red) !important;
+}
+
+.alt-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.alt-lead,
+.alt-note,
+.alt-empty {
+  margin: 0;
+  color: var(--ab-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.alt-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.alt-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 11px 13px;
+  border: 1px solid var(--ab-line);
+  border-radius: 10px;
+  background: var(--ab-surface);
+}
+
+.alt-card b {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.alt-card small {
+  color: var(--ab-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.alt-card button {
+  margin-top: 4px;
+}
