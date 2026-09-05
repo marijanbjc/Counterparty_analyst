@@ -430,13 +430,6 @@ function ComparisonTable({ data }: { data: Comparison }) {
           </tbody>
         </table>
       </div>
-      {(data.differences ?? []).length > 0 && (
-        <ul className="msg-diff">
-          {data.differences!.map((item) => (
-            <li key={item.metric}>{item.text}</li>
-          ))}
-        </ul>
-      )}
       {(data.not_found ?? []).length > 0 && (
         <p className="msg-missing">Нет в базе: {data.not_found!.join(', ')}</p>
       )}
@@ -497,9 +490,9 @@ function Alternatives({ inn, token, onPick }: {
       {data.items.length > 0 ? (
         <>
           <p className="alt-lead">
-            Вот кто ещё занимается тем же {where}. Все — действующие компании,
-            без банкротства, без действующих взысканий и без незавершённых исков
-            к ним. По уровню риска я их пока не смотрел.
+            Компании того же профиля {where}. Все действующие, без банкротства,
+            без действующих взысканий и без незавершённых исков к ним. Оценка
+            банка по ним не запрашивалась.
           </p>
           <div className="alt-cards">
             {data.items.map((item) => (
@@ -517,8 +510,8 @@ function Alternatives({ inn, token, onPick }: {
             ))}
           </div>
           <p className="alt-note">
-            Нажмите «Проверить» — разберу компанию так же, как первую: с вердиктом,
-            рисками и оценкой банка.
+            Нажмите «Проверить» — компания будет разобрана так же, как первая:
+            с вердиктом, рисками и оценкой банка.
           </p>
         </>
       ) : (
@@ -588,8 +581,8 @@ function ContractorBlockList({ rows }: { rows: ContractorBlocks[] }) {
       {rows.map((row) => (
         <section key={row.inn} className="msg-contractor">
           <h4>{row.short_name}</h4>
-          <BlockList title="Риски" tone="danger" items={row.key_risks} empty={NO_RISKS} />
-          <BlockList title="В порядке" tone="good" items={row.positives} empty={NO_POSITIVES} />
+          <BlockList title="Риски" tone="danger" items={row.key_risks.slice(0, BLOCK_LIMIT)} empty={NO_RISKS} />
+          <BlockList title="В порядке" tone="good" items={row.positives.slice(0, BLOCK_LIMIT)} />
         </section>
       ))}
     </div>
@@ -599,8 +592,12 @@ function ContractorBlockList({ rows }: { rows: ContractorBlocks[] }) {
 /* Пустой список и отсутствие блока выглядели одинаково: клиент не мог понять,
    рисков нет или они не подгрузились (known_issues.md §15.5). Поэтому пустоту
    проговариваем явно — но только там, где точно известно, что проверка прошла. */
+/* Больше трёх пунктов в блоке — это уже пересказ ответа своими словами:
+   у тяжёлого контрагента их набиралось по пять, и половина повторяла текст
+   выше (client_path_ideas.md §9). */
+const BLOCK_LIMIT = 3
+
 const NO_RISKS = 'По статусу, судам, взысканиям и реестрам ФНС отметок нет.'
-const NO_POSITIVES = 'Отдельных плюсов в отчёте не нашлось.'
 
 function BlockList({ title, tone, items, empty }: {
   title: string
@@ -737,8 +734,8 @@ function AssistantMessage({ content, blocks, degraded, token, onSend, onDraft }:
           {/* Пустые риски проговариваем — там пустота информативна («проверил,
               ничего не нашёл»). Пустые плюсы просто прячем: заглушка
               «плюсов не нашлось» ничего клиенту не даёт (§9). */}
-          <BlockList title="Риски" tone="danger" items={risks} empty={NO_RISKS} />
-          <BlockList title="В порядке" tone="good" items={positives} />
+          <BlockList title="Риски" tone="danger" items={risks.slice(0, BLOCK_LIMIT)} empty={NO_RISKS} />
+          <BlockList title="В порядке" tone="good" items={positives.slice(0, BLOCK_LIMIT)} />
         </>
       ) : null}
       {followups.length > 0 && (
