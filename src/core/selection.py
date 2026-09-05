@@ -18,7 +18,7 @@ _RISK = ("risk_level", "zsk_risk_level", "legal_severity", "legal_reason_code",
          "negative_factors", "discrepancies")
 _FINANCE = ("financials_available", "revenue", "profit", "net_assets", "negative_net_assets")
 _DEBT = ("current_debt", "debt_to_net_assets", "debt_comparable", "execproc_active",
-         "arbitration_pending_defendant")
+         "arbitration_total", "arbitration_pending_defendant")
 _PROFILE = ("age_years", "company_size")
 
 COLUMN_ORDER = {
@@ -59,9 +59,19 @@ def _row(session: Session, contractor: Contractor) -> dict:
         "debt_to_net_assets": burden["debt_to_net_assets"],
         "debt_comparable": burden["comparable"],
         "execproc_active": contractor.execproc_active,
+        # История и текущее по судам — разные величины: у половины базы дела
+        # были и закончились, и показывать только текущие значит скрыть опыт
+        # судебных споров (known_issues.md §18).
+        "arbitration_total": arbitration["total_count"],
         "arbitration_pending_defendant": arbitration["as_defendant"]["pending_count"],
         "negative_factors": contractor.negative_factors_count,
-        "discrepancies": len(discrepancy.detect(contractor, burden["revenue"], financials["available"])),
+        # Числом расхождения были непригодны: модель писала «одно несоответствие»,
+        # и что именно за несоответствие, пользователь узнать не мог. Текст уже
+        # сформулирован детектором — отдаём его как есть (known_issues.md §19).
+        "discrepancies": [
+            item["text"]
+            for item in discrepancy.detect(contractor, burden["revenue"], financials["available"])
+        ],
     }
 
 
@@ -117,14 +127,21 @@ _RANKERS = {
 
 
 def _ranking(rows: list[dict], criterion: str | None) -> tuple[list[dict], list[str]]:
+    """Места по критерию. Равные ключи получают ОДНО место (§7.1).
+
+    Сквозная нумерация делала из двух одинаковых контрагентов первого и второго,
+    и на вопрос «кто лучше» выходил ответ, которого в данных нет.
+    """
     if criterion not in _RANKERS:
         return [], []
     comparable, key = _RANKERS[criterion]
     ranked = sorted([r for r in rows if comparable(r)], key=key)
-    return (
-        [{"place": i, "inn": r["inn"], "short_name": r["short_name"]} for i, r in enumerate(ranked, 1)],
-        [r["inn"] for r in rows if not comparable(r)],
-    )
+    places: list[dict] = []
+    for index, row in enumerate(ranked):
+        same = index > 0 and key(row) == key(ranked[index - 1])
+        place = places[-1]["place"] if same else index + 1
+        places.append({"place": place, "inn": row["inn"], "short_name": row["short_name"]})
+    return places, [r["inn"] for r in rows if not comparable(r)]
 
 
 def compare(session: Session, inns: list[str], focus: str | None = None, rank_by: str | None = None) -> dict:
