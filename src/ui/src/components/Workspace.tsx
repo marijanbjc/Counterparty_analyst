@@ -5,7 +5,7 @@ import { Textarea } from '@alfalab/core-components/textarea'
 
 import { api, ApiError } from '../api'
 import { MoreCharts, RevenueChart } from './Charts'
-import { compactMoney, date, entityKind, money, number, percent, riskName, riskTone, zskName } from '../format'
+import { compactMoney, date, entityKind, money, number, percent, riskName, riskTone, verdictTone, zskName } from '../format'
 import type {
   AuthState,
   Comparison,
@@ -265,10 +265,14 @@ function ContractorsPage({ aiPanel }: { aiPanel: ReactNode }) {
 
 // Колонки сводки сравнения. Состав фиксирован, а порядок строк приходит с бэкенда
 // уже отсортированным по выбранному фокусу анализа (selection.COLUMN_ORDER).
+//
+// Порядок колонок: сначала показатели, ради которых сравнение и затевали,
+// светофоры — в конец. Вердикт стоит отдельной колонкой сразу за именем: он
+// один отвечает на вопрос пользователя, а риск и ЗСК его лишь обосновывают
+// (known_issues.md §18).
 const COMPARE_COLUMNS: Array<{ key: string; label: string; render: (row: ComparisonRow) => string }> = [
-  { key: 'risk_level', label: 'Риск', render: (r) => riskName((r.risk_level as never) ?? null) },
-  { key: 'zsk_risk_level', label: 'ЗСК', render: (r) => zskName(r.zsk_risk_level as never) },
   { key: 'revenue', label: 'Выручка', render: (r) => compactMoney(r.revenue as number | null) },
+  { key: 'profit', label: 'Прибыль', render: (r) => compactMoney(r.profit as number | null) },
   { key: 'net_assets', label: 'Чистые активы', render: (r) => compactMoney(r.net_assets as number | null) },
   {
     key: 'debt_to_net_assets',
@@ -276,7 +280,15 @@ const COMPARE_COLUMNS: Array<{ key: string; label: string; render: (row: Compari
     render: (r) => percent(r.debt_to_net_assets as number | null),
   },
   { key: 'execproc_active', label: 'Взыскания', render: (r) => number(r.execproc_active as number | null) },
+  { key: 'arbitration_total', label: 'Судов всего', render: (r) => number(r.arbitration_total as number | null) },
+  {
+    key: 'arbitration_pending_defendant',
+    label: 'Текущих исков',
+    render: (r) => number(r.arbitration_pending_defendant as number | null),
+  },
   { key: 'negative_factors', label: 'Негативных', render: (r) => number(r.negative_factors as number | null) },
+  { key: 'zsk_risk_level', label: 'ЗСК', render: (r) => zskName(r.zsk_risk_level as never) },
+  { key: 'risk_level', label: 'Риск', render: (r) => riskName((r.risk_level as never) ?? null) },
 ]
 
 function ComparisonTable({ data }: { data: Comparison }) {
@@ -303,7 +315,13 @@ function ComparisonTable({ data }: { data: Comparison }) {
                   {String(row.short_name ?? row.inn)}
                   <small>ИНН {String(row.inn)}</small>
                 </th>
-                <td>{verdicts.get(String(row.inn)) ?? '—'}</td>
+                <td>
+                  {verdicts.has(String(row.inn)) ? (
+                    <span className={`reliability-badge reliability-${verdictTone(verdicts.get(String(row.inn)))}`}>
+                      {verdicts.get(String(row.inn))}
+                    </span>
+                  ) : '—'}
+                </td>
                 {COMPARE_COLUMNS.map((column) => (
                   <td key={column.key}>{column.render(row)}</td>
                 ))}
@@ -379,7 +397,7 @@ function MessageHeader({ blocks }: { blocks: MessageBlocks }) {
   return (
     <header className="msg-verdict">
       {blocks.verdict && (
-        <span className={`reliability-badge reliability-${riskTone(blocks.risk_level ?? null)}`}>
+        <span className={`reliability-badge reliability-${verdictTone(blocks.verdict)}`}>
           {blocks.verdict}
         </span>
       )}

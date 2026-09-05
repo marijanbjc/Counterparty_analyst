@@ -13,16 +13,19 @@ const MIN_POINTS = 2
    по одной оси искажает текст. */
 const VIEW_W = 560
 const VIEW_H = 210
-const PAD_L = 58
+/** Жёлоб под подписи оси: «303,9 млн ₽» — это ~60 единиц, узкий обрезал их. */
+const PAD_L = 66
 const PAD_R = 14
 const PAD_T = 20
 const PAD_B = 26
 const TICKS = 3
 /** Воздух над максимумом, чтобы подпись значения не упиралась в край. */
 const HEADROOM = 0.1
+/** Высота строки подписи: ближе этого две подписи сталкиваются. */
+const LABEL_H = 13
 
 type Tone = 'ink' | 'accent' | 'muted'
-type Point = { label: string; value: number | null }
+type Point = { label: string; value: number | null; tone?: Tone }
 type Series = { name: string; tone: Tone; points: Point[] }
 type Format = (value: number | null) => string
 type Scale = { min: number; max: number; y: (value: number) => number }
@@ -43,21 +46,31 @@ function any(series: Series[]): boolean {
 const top = PAD_T
 const bottom = VIEW_H - PAD_B
 
-/** Своя шкала на ряд. Ноль в основании обязателен: столбик или линия, начатые
- *  от минимума, врут о масштабе. Отрицательные значения опускают основание. */
-function makeScale(values: number[]): Scale {
-  const high = Math.max(...values, 0)
-  const low = Math.min(...values, 0)
+/** Своя шкала на ряд.
+ *
+ *  `fromZero` — для столбиков: их читают по площади, и обрезанное основание
+ *  врёт о соотношении. Линиям ноль не нужен: значения подписаны у каждой точки,
+ *  а насильный ноль сплющивал ряд с малым разбросом в верхнюю треть поля. */
+function makeScale(values: number[], fromZero: boolean): Scale {
+  const high = Math.max(...values, ...(fromZero ? [0] : []))
+  const low = Math.min(...values, ...(fromZero ? [0] : []))
   const span = high - low || Math.abs(high) || 1
   const max = high + span * HEADROOM
-  const min = low < 0 ? low - span * HEADROOM : 0
+  const min = fromZero && low >= 0 ? 0 : low - span * HEADROOM
   const range = max - min || 1
   return { min, max, y: (value) => bottom - ((value - min) / range) * (bottom - top) }
 }
 
+/** Деления округляются: «182,05 производства» — выдуманная точность.
+ *  На денежных шкалах округление до единицы ничего не меняет — compactMoney
+ *  всё равно показывает миллионы и миллиарды. */
 function ticks(scale: Scale): number[] {
   const step = (scale.max - scale.min) / (TICKS - 1)
-  return Array.from({ length: TICKS }, (_, i) => scale.min + step * i)
+  const round = step >= 1
+  return Array.from({ length: TICKS }, (_, i) => {
+    const value = scale.min + step * i
+    return round ? Math.round(value) : value
+  })
 }
 
 function anchor(index: number, count: number): 'start' | 'middle' | 'end' {
@@ -95,12 +108,20 @@ function Grid({ scale, right }: { scale: Scale; right: number }) {
   )
 }
 
-/** Линия с разрывами: пропуск — это «данных нет», а не ноль (§10). */
-function Line({ series, scale, right, labelBelow, format }: {
+/** Линия с разрывами: пропуск — это «данных нет», а не ноль (§10).
+ *
+ *  `others` — отрисованные Y соседнего ряда, `order` — номер ряда. Жёсткое
+ *  правило «первый сверху, второй снизу» сталкивало подписи на пересечении
+ *  линий, поэтому сторона выбирается по месту: подпись уходит прочь от чужой
+ *  точки. Когда точки сходятся ближе высоты строки, «прочь» перестаёт быть
+ *  определённым — тогда решает номер ряда, иначе обе подписи уходят вверх
+ *  и печатаются одна поверх другой (known_issues.md §18). */
+function Line({ series, scale, right, others, order, format }: {
   series: Series
   scale: Scale
   right: number
-  labelBelow: boolean
+  others: (number | null)[]
+  order: number
   format: Format
 }) {
   const count = series.points.length
@@ -124,21 +145,26 @@ function Line({ series, scale, right, labelBelow, format }: {
       {segments.map((points) => (
         <polyline key={points} points={points} fill="none" />
       ))}
-      {series.points.map((point, index) =>
-        point.value == null ? null : (
+      {series.points.map((point, index) => {
+        if (point.value == null) return null
+        const y = scale.y(point.value)
+        const other = others[index]
+        const apart = other == null ? Infinity : Math.abs(y - other)
+        const below = apart < LABEL_H ? order > 0 : other != null && y > other
+        return (
           <g key={point.label}>
-            <circle cx={x(index)} cy={scale.y(point.value)} r={3} />
+            <circle cx={x(index)} cy={y} r={3} />
             <text
               className="chart-value"
               x={x(index)}
-              y={scale.y(point.value) + (labelBelow ? 15 : -9)}
+              y={y + (below ? 15 : -9)}
               textAnchor={anchor(index, count)}
             >
               {format(point.value)}
             </text>
           </g>
-        ),
-      )}
+        )
+      })}
     </g>
   )
 }
@@ -161,9 +187,10 @@ function Categories({ labels, right }: { labels: string[]; right: number }) {
   )
 }
 
-function Frame({ title, series, children }: {
+function Frame({ title, series, legend = true, children }: {
   title: string
   series: Series[]
+  legend?: boolean
   children: ReactNode
 }) {
   return (
@@ -171,7 +198,7 @@ function Frame({ title, series, children }: {
       <figcaption>
         {title}
         <span>
-          {series.map((s) => (
+          {legend && series.map((s) => (
             <b key={s.name} className={`chart-key chart-key-${s.tone}`}>{s.name}</b>
           ))}
         </span>
@@ -192,9 +219,13 @@ function LineChart({ title, series, format, dual = false }: {
   dual?: boolean
 }) {
   const right = dual ? VIEW_W - PAD_L : VIEW_W - PAD_R
-  const shared = makeScale(series.flatMap((s) => known(s.points)))
-  const scales = series.map((s) => (dual ? makeScale(known(s.points)) : shared))
+  const shared = makeScale(series.flatMap((s) => known(s.points)), false)
+  const scales = series.map((s) => (dual ? makeScale(known(s.points), false) : shared))
   const labels = series[0]?.points.map((p) => p.label) ?? []
+  // Y соседнего ряда в тех же координатах — по ним Line выбирает сторону подписи.
+  const drawn = series.map((s, index) =>
+    s.points.map((point) => (point.value == null ? null : scales[index].y(point.value))),
+  )
 
   return (
     <Frame title={title} series={series}>
@@ -209,7 +240,8 @@ function LineChart({ title, series, format, dual = false }: {
           series={s}
           scale={scales[index]}
           right={right}
-          labelBelow={index > 0}
+          others={series.length === 2 ? drawn[1 - index] : []}
+          order={index}
           format={format}
         />
       ))}
@@ -220,20 +252,21 @@ function LineChart({ title, series, format, dual = false }: {
 
 /** Столбики. Две величины на одну дату сравнивают по высоте, а не по наклону:
  *  линия между «долгом» и «чистыми активами» соединяет несоединимое. */
-function BarChart({ title, series, format }: {
+function BarChart({ title, series, format, legend = true }: {
   title: string
   series: Series[]
   format: Format
+  legend?: boolean
 }) {
   const right = VIEW_W - PAD_R
-  const scale = makeScale(series.flatMap((s) => known(s.points)))
+  const scale = makeScale(series.flatMap((s) => known(s.points)), true)
   const labels = series[0]?.points.map((p) => p.label) ?? []
   const slot = (right - PAD_L) / Math.max(labels.length, 1)
   const width = Math.min((slot * 0.62) / series.length, 46)
   const base = scale.y(0)
 
   return (
-    <Frame title={title} series={series}>
+    <Frame title={title} series={series} legend={legend}>
       <Grid scale={scale} right={right} />
       <Axis scale={scale} format={format} tone="muted" side="left" />
       {series.map((s, order) =>
@@ -243,7 +276,7 @@ function BarChart({ title, series, format }: {
           const x = center + (order - (series.length - 1) / 2) * width - width / 2
           const y = scale.y(point.value)
           return (
-            <g key={`${s.name}-${point.label}`} className={`chart-bar chart-bar-${s.tone}`}>
+            <g key={`${s.name}-${point.label}`} className={`chart-bar chart-bar-${point.tone ?? s.tone}`}>
               <rect x={x} y={Math.min(y, base)} width={width} height={Math.max(Math.abs(base - y), 1)} />
               <text
                 className="chart-value"
@@ -297,28 +330,21 @@ function build(pack: FactPack) {
     { name: 'Ответчик', tone: 'accent', points: arbitration.map((row) => ({ label: String(row.year), value: row.defendant_count ?? null })) },
   ]
   // Долг и капитал — не ряд по времени, а две величины на одну дату: столбики.
+  // Один ряд с цветом на точку, а не два ряда: два ряда группируются в слоте
+  // и смещают столбик мимо его же подписи.
   const debtSeries: Series[] =
     burden && burden.net_assets != null
-      ? [
-          { name: 'Текущий долг', tone: 'accent', points: [{ label: 'Текущий долг', value: burden.current_debt }] },
-          { name: 'Чистые активы', tone: 'ink', points: [{ label: 'Чистые активы', value: burden.net_assets }] },
-        ]
+      ? [{
+          name: 'Сумма',
+          tone: 'accent',
+          points: [
+            { label: 'Текущий долг', value: burden.current_debt, tone: 'accent' },
+            { label: 'Чистые активы', value: burden.net_assets, tone: 'ink' },
+          ],
+        }]
       : []
 
   return { revenue, balanceSeries, execSeries, arbitrationSeries, debtSeries }
-}
-
-/** Столбики долга и капитала стоят рядом, поэтому подписи рядов дублируют
- *  категории под ними: в легенде их не показываем. */
-function debtBars(series: Series[]): Series[] {
-  const labels = series.map((s) => s.points[0]?.label ?? s.name)
-  return series.map((s, index) => ({
-    ...s,
-    points: labels.map((label, position) => ({
-      label,
-      value: position === index ? (s.points[0]?.value ?? null) : null,
-    })),
-  }))
 }
 
 export function RevenueChart({ pack }: { pack: FactPack }) {
@@ -341,11 +367,13 @@ export function MoreCharts({ pack }: { pack: FactPack }) {
       <BarChart key="arb" title="Арбитраж: истец и ответчик" series={arbitrationSeries} format={number} />
     ),
     any(debtSeries) && (
+      // Легенды нет: подписи столбиков стоят под ними и дублировать их незачем.
       <BarChart
         key="debt"
         title="Текущий долг против чистых активов"
-        series={debtBars(debtSeries)}
+        series={debtSeries}
         format={compactMoney}
+        legend={false}
       />
     ),
   ].filter(Boolean)

@@ -34,6 +34,17 @@ export const riskTone = (value: RiskLevel) =>
     value ?? 'UNKNOWN'
   ]
 
+/** Цвет плашки берётся из вердикта, а не из уровня риска. На плашке написан
+ *  вердикт, и красить её светофором банка значило показывать зелёное
+ *  «Не рекомендуется»: у контрагента в банкротстве риск остаётся низким
+ *  (known_issues.md §17). Уровень риска красится riskTone — там он и написан. */
+export const verdictTone = (verdict: string | null | undefined) =>
+  ({
+    'Работать': 'good',
+    'Работать с осторожностью': 'warning',
+    'Не рекомендуется': 'danger',
+  })[verdict ?? ''] ?? 'neutral'
+
 export function entityKind(kind: string | null | undefined): string {
   if (kind === 'sole_proprietor') return 'Индивидуальный предприниматель'
   if (kind === 'organization') return 'Организация'
