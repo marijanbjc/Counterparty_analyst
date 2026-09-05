@@ -105,7 +105,7 @@ class ChatResponse(BaseModel):
     report: dict | None = None
     contractor: dict | None = None
     # Структурные блоки сообщения: риски, сильные стороны, что запросить и сводка
-    # сравнения. Без них ответ читается сплошным абзацем (known_issues.md §1, §4).
+    # сравнения. Без них ответ читается сплошным абзацем (ARCHITECTURE.md, §4).
     key_risks: list[str] = Field(default_factory=list)
     positives: list[str] = Field(default_factory=list)
     followups: list[dict] = Field(default_factory=list)
@@ -123,7 +123,7 @@ class ChatResponse(BaseModel):
 
 
 class AlternativesRequest(BaseModel):
-    """Подбор альтернативы (client_path_ideas.md §7).
+    """Подбор альтернативы (ARCHITECTURE.md).
 
     `same_region` снимается по кнопке клиента, когда в своём регионе не нашлось.
     """

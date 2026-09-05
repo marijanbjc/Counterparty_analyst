@@ -87,7 +87,7 @@ def _arbitration_side(status: dict, side: str) -> dict:
     return {
         "count": total("Count"),
         "amount": total("Amount"),
-        # Открытые дела — текущий риск, в отличие от завершённых; см. mcp_architecture.md §2.3
+        # Открытые дела — текущий риск, в отличие от завершённых; см. ARCHITECTURE.md
         "pending_count": to_int(statuses["p"].get(f"{letter}pCount")) or 0,
         "pending_amount": to_int(statuses["p"].get(f"{letter}pAmount")) or 0,
     }

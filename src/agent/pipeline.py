@@ -424,7 +424,7 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str) -> None:
     plan.schema = prompts.REPORT_SCHEMA
     plan.expected_completion = get_settings().tokens_expected_completion
     # Список «что запросить» детерминирован и нужен интерфейсу, а не модели:
-    # в промпт он не уходит и токенов хода не занимает (known_issues.md §1).
+    # в промпт он не уходит и токенов хода не занимает (ARCHITECTURE.md).
     questions = draft_followup_questions(pack["inn"])
     plan.followups = questions.get("items") or [] if questions.get("found") else []
 
@@ -432,7 +432,7 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str) -> None:
 def _plan_compare(session: Session, plan: _Plan, inns: tuple[str, ...]) -> None:
     # rank_by обязателен: без него _ranking возвращает пустой список, и на вопрос
     # «кто лучше» модели просто нечем отвечать. Критерий по умолчанию — риск,
-    # фокус анализа его уточняет (known_issues.md §19).
+    # фокус анализа его уточняет (ARCHITECTURE.md).
     payload = compare_contractors(
         list(inns), focus=plan.role_preset, rank_by=_RANK_BY.get(plan.role_preset, "risk")
     )
@@ -866,7 +866,7 @@ def _text(data: dict[str, Any], key: str) -> str | None:
 
 def _strings(data: dict[str, Any], key: str) -> list[str]:
     """Списки для человека: технические вставки вычищаются здесь, а не промптом.
-    Промпт частоту снижает, гарантии не даёт (known_issues.md §14.1)."""
+    Промпт частоту снижает, гарантии не даёт (ARCHITECTURE.md)."""
     raw = [item for item in data.get(key) or [] if isinstance(item, str) and item.strip()]
     return sanitize.lines(raw)
 

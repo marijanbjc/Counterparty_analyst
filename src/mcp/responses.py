@@ -1,4 +1,4 @@
-"""Общий контракт ответов инструментов — mcp_architecture.md §2.1, §2.2, §2.7."""
+"""Общий контракт ответов инструментов — ARCHITECTURE.md, §2.2, §2.7."""
 
 from collections.abc import Callable
 from typing import Any
@@ -24,7 +24,7 @@ def invalid_inn(value: str) -> dict:
 
 def not_in_database(value: str) -> dict:
     # Отказ намеренно не перечисляет известные ИНН: иначе на каждой опечатке
-    # модели вываливается содержимое базы (mcp_architecture.md §4.1).
+    # модели вываливается содержимое базы (ARCHITECTURE.md).
     return {"found": False, "reason": "not_in_database", "inn": value, "hint": _NOT_IN_DATABASE}
 
 

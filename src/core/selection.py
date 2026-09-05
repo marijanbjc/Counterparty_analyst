@@ -1,4 +1,4 @@
-"""Работа с несколькими контрагентами — mcp_architecture.md §7."""
+"""Работа с несколькими контрагентами — ARCHITECTURE.md"""
 
 from sqlalchemy.orm import Session
 
@@ -61,13 +61,13 @@ def _row(session: Session, contractor: Contractor) -> dict:
         "execproc_active": contractor.execproc_active,
         # История и текущее по судам — разные величины: у половины базы дела
         # были и закончились, и показывать только текущие значит скрыть опыт
-        # судебных споров (known_issues.md §18).
+        # судебных споров (ARCHITECTURE.md).
         "arbitration_total": arbitration["total_count"],
         "arbitration_pending_defendant": arbitration["as_defendant"]["pending_count"],
         "negative_factors": contractor.negative_factors_count,
         # Числом расхождения были непригодны: модель писала «одно несоответствие»,
         # и что именно за несоответствие, пользователь узнать не мог. Текст уже
-        # сформулирован детектором — отдаём его как есть (known_issues.md §19).
+        # сформулирован детектором — отдаём его как есть (ARCHITECTURE.md).
         "discrepancies": [
             item["text"]
             for item in discrepancy.detect(contractor, burden["revenue"], financials["available"])
@@ -161,7 +161,7 @@ def compare(session: Session, inns: list[str], focus: str | None = None, rank_by
     }
 
 
-# Подбор альтернативы — client_path_ideas.md §7. Фильтры ТОЛЬКО по открытым
+# Подбор альтернативы — ARCHITECTURE.md Фильтры ТОЛЬКО по открытым
 # реестрам: ЕГРЮЛ, ФССП, кад.арбитр. Уровень риска и ЗСК сюда не входят и наружу
 # не отдаются — отфильтровать по ним значит неявно выдать оценку банка по
 # контрагенту, которого клиент не запрашивал.

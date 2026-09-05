@@ -115,7 +115,7 @@ function Grid({ scale, right }: { scale: Scale; right: number }) {
  *  линий, поэтому сторона выбирается по месту: подпись уходит прочь от чужой
  *  точки. Когда точки сходятся ближе высоты строки, «прочь» перестаёт быть
  *  определённым — тогда решает номер ряда, иначе обе подписи уходят вверх
- *  и печатаются одна поверх другой (known_issues.md §18). */
+ *  и печатаются одна поверх другой (ARCHITECTURE.md). */
 function Line({ series, scale, right, others, order, format }: {
   series: Series
   scale: Scale

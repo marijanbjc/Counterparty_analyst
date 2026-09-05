@@ -49,14 +49,14 @@ def _legal(inn: str) -> dict:
 
 
 # Для оценки связей достаточно счётчиков и короткого списка: полные карточки
-# двадцати компаний раздували набор до 3 836 токенов (known_issues.md §7).
+# двадцати компаний раздували набор до 3 836 токенов (ARCHITECTURE.md).
 SECURITY_AFFILIATIONS_LIMIT = 5
 
 
 def _present_flags(inn: str) -> dict:
     """Только стоящие метки ФНС. Снятые приходят с формулировками вида
     «не найден в реестре…» и весят больше, чем сами метки, а для оценки риска
-    не нужны: их отсутствие видно по счётчику (known_issues.md §7)."""
+    не нужны: их отсутствие видно по счётчику (ARCHITECTURE.md)."""
     payload = profile_tools.get_fns_flags(inn)
     flags = payload.get("flags") or []
     present = [flag for flag in flags if flag.get("present")]
