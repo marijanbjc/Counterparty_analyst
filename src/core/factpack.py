@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from src.core import aggregates, discrepancy
+from src.core import aggregates, debt, discrepancy
 from src.core import inn as inn_module
 from src.core import legal_status
 from src.core.roles import chapters_for
@@ -78,6 +78,8 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
         # видно только в status_reason. Правовой статус одинаков в обоих режимах (§8.2)
         # и служит входом эскалации вердикта (§5.3).
         "legal_status": legal_status.build(contractor),
+        # Нужен графику «долг против активов» и сравнению; считается всё равно (§10).
+        "debt_burden": debt.build(contractor, reports),
         "profile": {
             "status": contractor.status,
             "registered": aggregates.iso(contractor.registration_date),
