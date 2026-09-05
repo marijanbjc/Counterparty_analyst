@@ -69,6 +69,9 @@ export type AlternativesResponse = {
 }
 
 export type MessageBlocks = {
+  /** Сценарий хода: по нему решаем, показывать ли карточку риск/плюсы.
+   *  В уточнении она не нужна — клиент задал вопрос и ждёт ответ. */
+  scenario?: string
   /** Кого касается ответ: имя и ИНН уходят в шапку сообщения. */
   subject?: string | null
   inn?: string | null

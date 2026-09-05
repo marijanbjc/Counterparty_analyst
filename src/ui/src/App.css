@@ -1766,13 +1766,20 @@ h3,
   display: block;
   padding: 7px 9px;
   border-radius: 7px;
-  background: var(--ab-navy);
-  color: #fff;
-  /* Мельче и тише: подсказка сопровождает термин, а не спорит с текстом. */
-  font: 400 11px/1.4 var(--ab-font, inherit);
+  /* Светлая плашка с приглушённым текстом: тёмная бросалась в глаза сильнее,
+     чем сам ответ. Подсказка сопровождает термин, а не спорит с ним. */
+  background: var(--ab-neutral-bg, #eceff3);
+  color: var(--ab-muted);
+  border: 1px solid var(--ab-line);
+  /* Свойства по отдельности, а не сокращением `font`: переменной --ab-font
+     в проекте нет, а `font: 400 10px/1.4 inherit` — невалидное объявление,
+     браузер выбрасывал его целиком, и окно наследовало размер шрифта body. */
+  font-weight: 400;
+  font-size: 11px;
+  line-height: 1.4;
   text-align: left;
   white-space: normal;
-  box-shadow: 0 4px 14px rgb(15 23 42 / 16%);
+  box-shadow: 0 4px 12px rgb(15 23 42 / 10%);
 }
 
 /* Снизу экрана места нет — окно раскрывается вверх от иконки. */
@@ -1783,9 +1790,11 @@ h3,
 .hint-bubble b {
   display: block;
   margin-bottom: 2px;
-  font-size: 10px;
-  letter-spacing: 0.02em;
-  opacity: 0.7;
+  color: var(--ab-ink);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.55;
 }
 
 /* --- Подсказки следующего шага и подбор альтернативы
@@ -1795,6 +1804,12 @@ h3,
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px dashed var(--ab-line);
+}
+
+.next-steps-lead {
+  margin: 0 0 8px;
+  color: var(--ab-muted);
+  font-size: 12px;
 }
 
 .next-steps-row {

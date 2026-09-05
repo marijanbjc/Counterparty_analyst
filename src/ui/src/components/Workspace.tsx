@@ -93,10 +93,10 @@ const SCENARIOS: ScenarioCard[] = [
   },
   {
     key: 'security',
-    title: 'Узнать, кто за компанией',
+    title: 'Проверить статус и владельцев',
     hint: 'Статус в ЕГРЮЛ, отметки ФНС, владельцы, связанные компании',
     role: 'security',
-    draft: 'Кто стоит за компанией с ИНН ',
+    draft: 'Проверь статус и владельцев контрагента с ИНН ',
     primary: false,
   },
   {
@@ -558,6 +558,9 @@ function NextSteps({ steps, inn, token, onSend, onDraft }: {
   }
   return (
     <div className="next-steps">
+      {/* Без этой строки ряд кнопок читался как закрытый список: клиент
+          не понимал, что может спросить что-то своё (§4). */}
+      <p className="next-steps-lead">Что дальше — выберите или задайте свой вопрос в чате</p>
       <div className="next-steps-row">
         {steps.map((step) => (
           <Button
@@ -668,10 +671,6 @@ function WelcomeScreen({ onPick }: { onPick: (card: ScenarioCard) => void }) {
             Задают, на чём сосредоточиться в разборе: финансы, суды и взыскания,
             статус и владельцы, чем занимается. По умолчанию — общий обзор.
           </li>
-          <li>
-            Данных они не добавляют, только меняют акцент ответа. Углубиться
-            в тему предложу отдельной кнопкой после разбора.
-          </li>
         </ul>
       </details>
     </div>
@@ -727,18 +726,21 @@ function AssistantMessage({ content, blocks, degraded, token, onSend, onDraft }:
       <MessageHeader blocks={blocks} />
       <p>{content}</p>
       {(blocks.datasets ?? []).length > 0 && (
-        <p className="msg-datasets">Дополнительно поднял: {(blocks.datasets ?? []).join(', ').toLowerCase()}</p>
+        <p className="msg-datasets">Дополнительно изучил раздел: {(blocks.datasets ?? []).join(', ').toLowerCase()}</p>
       )}
       {blocks.report && <RevenueChart pack={blocks.report} />}
       {blocks.comparison && <ComparisonTable data={blocks.comparison} />}
       {perContractor.length > 0 ? (
         <ContractorBlockList rows={perContractor} />
-      ) : (
+      ) : blocks.scenario === 'analyze' ? (
         <>
+          {/* Пустые риски проговариваем — там пустота информативна («проверил,
+              ничего не нашёл»). Пустые плюсы просто прячем: заглушка
+              «плюсов не нашлось» ничего клиенту не даёт (§9). */}
           <BlockList title="Риски" tone="danger" items={risks} empty={NO_RISKS} />
-          <BlockList title="В порядке" tone="good" items={positives} empty={NO_POSITIVES} />
+          <BlockList title="В порядке" tone="good" items={positives} />
         </>
-      )}
+      ) : null}
       {followups.length > 0 && (
         <section className="msg-block msg-block-neutral">
           <h4>Что запросить у контрагента</h4>
