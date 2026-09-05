@@ -15,8 +15,11 @@ llm_model: openai/gpt-oss-120b
 llm_api_key: ""
 llm_timeout_seconds: 60
 llm_max_retries: 2
-# Свойство ключа поставщика, не тарифа пользователя: меняется вместе с ключом.
-llm_tpm_limit: 8000
+# Минутное окно ключа поставщика. Ключей может быть два — бесплатный и платный,
+# поэтому лимит принадлежит профилю, а не приложению (known_issues.md §8).
+# Платного ключа сейчас нет, значения совпадают.
+llm_tpm_limit_free: 8000
+llm_tpm_limit_paid: 8000
 
 auth_login: admin
 auth_password: ""
@@ -46,19 +49,27 @@ llm_validator_enabled: false
 tariff_default: free
 tariff_free_requests_limit: 20
 tariff_paid_requests_limit: 500
-tariff_free_max_buttons: 2
+# Один набор за ход: два не помещаются в бюджет и дорогой отсекался постфактум.
+tariff_free_max_buttons: 1
 tariff_paid_max_buttons: 6
 tariff_free_max_compare: 3
 tariff_paid_max_compare: 10
-context_budget_share: 0.7
+# Ход и так съедает минутное окно целиком (запрос + ответ ≈ 7,4 тыс. из 8 тыс.),
+# поэтому доля поднята: на числе ходов в минуту это не сказывается.
+context_budget_share: 0.8
 
-# Замеры на живом API Groq, openai/gpt-oss-120b — agent_architecture.md §2.1.
-tokens_system_prompt: 110
+# Замеры по всей базе, p90 — не медиана: бюджет должен сходиться и на тяжёлых
+# контрагентах, иначе набор кнопки отсекается уже после расчёта.
+# Пересчитывать при изменении состава факт-пакета.
+# Замер по самому длинному варианту — сравнение с инструментами.
+# Значение 110 осталось от раннего минимального промпта и занижало
+# расчёт бюджета: код спасал max() с фактической оценкой.
+tokens_system_prompt: 1170
 tokens_tools_core: 1817
 tokens_tools_role: 2826
 tokens_tools_all: 4586
-tokens_factpack_full: 3798
-tokens_factpack_slim: 2029
+tokens_factpack_full: 4501
+tokens_factpack_slim: 2330
 tokens_chars_per_token: 2.5
 tokens_safety_margin: 1.15
 # Резервируется лимитером вместе с промптом: record() пишет prompt + completion,

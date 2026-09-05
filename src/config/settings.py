@@ -44,7 +44,8 @@ class Settings(BaseSettings):
     llm_api_key: str
     llm_timeout_seconds: int
     llm_max_retries: int
-    llm_tpm_limit: int
+    llm_tpm_limit_free: int
+    llm_tpm_limit_paid: int
 
     auth_login: str
     auth_password: str
