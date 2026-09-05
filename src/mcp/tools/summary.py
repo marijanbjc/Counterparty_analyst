@@ -30,7 +30,7 @@ def get_risk_factors(inn: str, chapter: str | None = None) -> dict:
     return for_contractor(inn, build)
 
 
-def get_contractor_full(inn: str, role: str | None = None) -> dict:
+def get_contractor_full(inn: str) -> dict:
     """Готовая сводка по контрагенту одним вызовом: оба светофора, правовой статус,
     профиль, финансы, суды, взыскания, факторы риска и результат детектора расхождений.
     Вызывай в начале разбора, дальше уточняй предметными инструментами. Блок
@@ -40,7 +40,7 @@ def get_contractor_full(inn: str, role: str | None = None) -> dict:
     или предстоящее исключение из реестра и называется всегда, независимо от светофора."""
 
     def build(session: Session, contractor: Contractor) -> dict:
-        pack = factpack.build(session, contractor.inn, mode=factpack.FULL, role=role)
+        pack = factpack.build(session, contractor.inn, mode=factpack.FULL)
         pack.pop("inn", None)
         pack.pop("short_name", None)
         pack.pop("as_of", None)

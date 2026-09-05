@@ -3,9 +3,17 @@ from fastapi import APIRouter, HTTPException, status
 from src.agent.profiles import profile_for, within_quota
 from src.core import factpack
 from src.core import inn as inn_module
+from src.core import selection
+from src.db.contragents import repository as contractor_repository
 from src.db.client import repository as client_repository
 from src.webapp.dependencies import CurrentUser, DbSession
-from src.webapp.schemas import CompareRequest, CompareResponse, ProfileResponse
+from src.webapp.schemas import (
+    AlternativesRequest,
+    AlternativesResponse,
+    CompareRequest,
+    CompareResponse,
+    ProfileResponse,
+)
 
 router = APIRouter(prefix="/api", tags=["operations"])
 
@@ -65,3 +73,25 @@ def compare(payload: CompareRequest, session: DbSession, user: CurrentUser) -> C
         missing=[inn for inn in valid if inn not in found],
         invalid=[inn for inn in unique_inns if inn in invalid],
     )
+
+
+@router.post("/alternatives", response_model=AlternativesResponse)
+def alternatives(
+    payload: AlternativesRequest, session: DbSession, user: CurrentUser
+) -> AlternativesResponse:
+    """Похожие компании без банкротства, взысканий и незавершённых исков (§7).
+
+    Квоту не тратит: выборку целиком собирает код, поставщик модели не вызывается.
+    Оценка банка — уровень риска и ЗСК — в ответе отсутствует намеренно: её
+    клиент получает обычной проверкой, назвав ИНН сам.
+    """
+    if not inn_module.is_valid(payload.inn):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=inn_module.FORMAT_HINT)
+
+    contractor = contractor_repository.get_contractor(session, payload.inn)
+    if contractor is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Контрагента нет в базе.")
+
+    return AlternativesResponse(**selection.alternatives(
+        session, contractor, same_region=payload.same_region
+    ))

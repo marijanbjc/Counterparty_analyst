@@ -3,7 +3,7 @@
 from sqlalchemy.orm import Session
 
 from src.core import aggregates, debt, discrepancy, factpack, legal_status
-from src.core.roles import ROLE_CHAPTERS
+from src.core.legal_status import CRITICAL
 from src.db.contragents import repository
 from src.db.models import Contractor
 
@@ -150,16 +150,76 @@ def compare(session: Session, inns: list[str], focus: str | None = None, rank_by
     found = [c for _, c in contractors if c is not None]
     rows = [_row(session, c) for c in found]
     ranking, not_comparable = _ranking(rows, rank_by)
-    # В factpack роли «activity» нет, поэтому фильтр факторов по ней не применяем.
-    pack_role = focus if focus in ROLE_CHAPTERS else None
     return {
-        "items": factpack.build_many(session, [c.inn for c in found], role=pack_role),
+        "items": factpack.build_many(session, [c.inn for c in found]),
         "matrix": [_ordered(row, focus) for row in rows],
         "differences": _differences(rows),
         "ranking": ranking,
         "rank_by": rank_by if rank_by in _RANKERS else None,
         "not_comparable": not_comparable,
         "not_found": [i for i, c in contractors if c is None],
+    }
+
+
+# Подбор альтернативы — client_path_ideas.md §7. Фильтры ТОЛЬКО по открытым
+# реестрам: ЕГРЮЛ, ФССП, кад.арбитр. Уровень риска и ЗСК сюда не входят и наружу
+# не отдаются — отфильтровать по ним значит неявно выдать оценку банка по
+# контрагенту, которого клиент не запрашивал.
+ALTERNATIVES_LIMIT = 3
+# Кандидатов перебираем с запасом: фильтры отсеивают большинство найденных.
+_ALTERNATIVES_POOL = 50
+
+
+def _is_clean(session: Session, contractor: Contractor) -> bool:
+    if contractor.status != "CURRENT":
+        return False
+    if legal_status.build(contractor)["severity"] == CRITICAL:
+        return False
+    if (contractor.execproc_active or 0) > 0:
+        return False
+    pending = aggregates.arbitration(contractor, [])["as_defendant"]["pending_count"]
+    return not pending
+
+
+def alternatives(session: Session, contractor: Contractor, same_region: bool = True) -> dict:
+    """Похожие компании без банкротства, взысканий и незавершённых исков.
+
+    Отдаём только открытые сведения и не больше трёх: длинный список
+    превращается в выборку из базы и раскрывает её объём. Сколько нашлось
+    всего, не сообщаем никогда (§7, правило 10).
+    """
+    division = (contractor.main_okved_code or "").split(".")[0]
+    if not division:
+        return {"items": [], "same_region": same_region, "region": contractor.region,
+                "can_widen": False, "okved": None}
+
+    region = contractor.region if same_region else None
+    rows = repository.similar_contractors(
+        session, contractor.inn, division, region, _ALTERNATIVES_POOL
+    )
+    clean = [row for row in rows if _is_clean(session, row)][:ALTERNATIVES_LIMIT]
+    # Предлагать снять регион можно только когда он вообще был задан и когда
+    # без него что-то найдётся: пустая кнопка хуже честного отказа.
+    can_widen = bool(same_region and contractor.region and not clean) and any(
+        _is_clean(session, row)
+        for row in repository.similar_contractors(
+            session, contractor.inn, division, None, _ALTERNATIVES_POOL
+        )
+    )
+    return {
+        "items": [
+            {
+                "inn": row.inn,
+                "short_name": row.short_name,
+                "region": row.region,
+                "main_okved": row.main_okved_description,
+            }
+            for row in clean
+        ],
+        "same_region": same_region,
+        "region": contractor.region,
+        "can_widen": can_widen,
+        "okved": contractor.main_okved_description,
     }
 
 

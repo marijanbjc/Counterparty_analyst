@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from src.core import aggregates, debt, discrepancy
 from src.core import inn as inn_module
 from src.core import legal_status
-from src.core.roles import chapters_for
 from src.db.contragents import repository
 from src.db.models import Contractor
 
@@ -37,8 +36,16 @@ def _verdict_basis(contractor: Contractor) -> dict:
     }
 
 
-def _factors(contractor: Contractor, session: Session, chapters: tuple[str, ...], with_positive: bool) -> dict:
-    rows = repository.get_factors(session, contractor.inn, chapters=chapters)
+def _factors(contractor: Contractor, session: Session, with_positive: bool) -> dict:
+    """Негативные факторы отдаются ПОЛНОСТЬЮ, без фильтра по фокусу анализа.
+
+    Фильтр был: фокус «финансы» оставлял только финансовые главы. Замерено —
+    у 55 контрагентов из 100 он прятал от модели фиктивный адрес, недостоверные
+    сведения и блокировки счетов, то есть ровно то, ради чего проверку и делают.
+    Экономия составляла 506 токенов на бесплатном тарифе при бюджете хода
+    в 24 000 — цена несопоставима с ценой умолчания.
+    """
+    rows = repository.get_factors(session, contractor.inn)
     result: dict = {"negative": [], "positive": []}
     for row in rows:
         result[row.polarity].append({"code": row.code, "chapter": row.chapter, "name": row.name})
@@ -48,11 +55,10 @@ def _factors(contractor: Contractor, session: Session, chapters: tuple[str, ...]
         # это самая дорогая часть пакета, которую можно снять без потери оценки (§8.3).
         result.pop("positive")
     result["negative_total"] = contractor.negative_factors_count
-    result["filtered_by_role"] = bool(chapters)
     return result
 
 
-def build(session: Session, inn: str, mode: str = FULL, role: str | None = None) -> dict | None:
+def build(session: Session, inn: str, mode: str = FULL) -> dict | None:
     if mode not in MODES:
         # Молчаливый возврат FULL на незнакомом режиме прятал бы перерасход токенов
         # базового профиля до самого счёта поставщика.
@@ -66,7 +72,6 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
     financials = aggregates.financials(reports)
     revenue = aggregates.latest_revenue(reports)
     has_financials = bool(reports)
-    chapters = chapters_for(role)
 
     pack = {
         "inn": contractor.inn,
@@ -98,7 +103,7 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
             repository.get_top_execproc(session, inn, active_only=True, limit=TOP_EXECPROC),
             repository.get_execproc_by_year(session, inn),
         ),
-        "risk_factors": _factors(contractor, session, chapters, with_positive=mode == FULL),
+        "risk_factors": _factors(contractor, session, with_positive=mode == FULL),
         "discrepancies": discrepancy.detect(contractor, revenue, has_financials),
         "related_companies_count": repository.count_related(session, inn),
     }
@@ -151,8 +156,7 @@ def build(session: Session, inn: str, mode: str = FULL, role: str | None = None)
 def build_many(
     session: Session,
     inns: list[str],
-    role: str | None = None,
     mode: str = SLIM,
 ) -> list[dict]:
-    packs = [build(session, inn, mode=mode, role=role) for inn in inns]
+    packs = [build(session, inn, mode=mode) for inn in inns]
     return [pack for pack in packs if pack]

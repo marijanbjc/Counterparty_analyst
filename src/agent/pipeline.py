@@ -33,6 +33,7 @@ from src.agent.profiles import ExecutionProfile, profile_for
 from src.config.settings import get_settings
 from src.core import factpack
 from src.core import inn as inn_module
+from src.core import nextsteps
 from src.core import report as report_builder
 from src.core import validation
 from src.db.analyses import repository as analyses_repository
@@ -57,7 +58,7 @@ REPLY_TOKENS = "_reply_tokens"
 
 logger = logging.getLogger(__name__)
 
-DEGRADED_TAIL = "Показан детерминированный отчёт."
+DEGRADED_TAIL = "Ниже — данные отчёта без ИИ-разбора."
 PARTIAL_NOTICE = "Модель прислала не весь текст — недостающее дописано по данным отчёта."
 INTERRUPTED = "\n\nИИ-анализ прерван, ниже детерминированный отчёт.\n\n"
 
@@ -166,6 +167,10 @@ class _Plan:
     tool_names: list[str] = field(default_factory=list)
     allowed_inns: tuple[str, ...] = ()
     followups: list[dict[str, Any]] = field(default_factory=list)
+    # Наборы, которые реально дочитались за этот ход: интерфейсу нужно показать,
+    # что кнопка сработала. Без этого у контрагента с пустым разделом ответ
+    # выглядел неотличимо от обычного, и кнопка казалась сломанной.
+    applied_sets: tuple[str, ...] = ()
     comparison: dict[str, Any] | None = None
 
 
@@ -201,6 +206,9 @@ async def run_turn(
         return
 
     streamed: list[str] = []
+    # Правило «писать ЗСК, а не ZSK» модель нарушает регулярно, а постобработка
+    # ответа запрещена — он уже на экране. Поэтому чистим сам поток (§13.6).
+    cleaner = sanitize.StreamCleaner()
     result: llm.Result | None = None
     failure: str | None = None
     messages = list(plan.llm_messages)
@@ -243,14 +251,22 @@ async def run_turn(
                 # После tool_call буферизуем финальную реплику до проверки ИНН:
                 # иначе неизвестный ИНН уже окажется на экране до валидации.
                 if plan.scenario != agent_router.CLARIFY and not called_any:
-                    streamed.append(event.text)
-                    yield Delta(event.text)
+                    text = cleaner.feed(event.text)
+                    if text:
+                        streamed.append(text)
+                        yield Delta(text)
             elif isinstance(event, llm.Failure):
                 failure = event.detail
                 break
             else:
                 result = event
                 break
+        # Придержанный хвост обязан уйти на экран: без него ответ обрывается
+        # на два символа, а история перестаёт совпадать с показанным (§13.6).
+        tail = cleaner.flush()
+        if tail:
+            streamed.append(tail)
+            yield Delta(tail)
         if called:
             continue
         break
@@ -338,7 +354,7 @@ def _prepare(
         elif route.scenario == agent_router.COMPARE:
             _plan_compare(session, plan, route.inns)
         elif route.scenario == agent_router.CLARIFY:
-            _plan_clarify(session, plan, last)
+            _plan_clarify(session, plan, last, buttons)
         else:
             plan.answer = route.answer
 
@@ -355,7 +371,7 @@ def _prepare(
 
 
 def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | None) -> None:
-    pack = factpack.build(session, inn, mode=plan.profile.factpack_mode, role=plan.role_preset)
+    pack = factpack.build(session, inn, mode=plan.profile.factpack_mode)
     if pack is None:
         raise TurnError(404, "Контрагента с таким ИНН в базе нет.")
 
@@ -391,6 +407,7 @@ def _plan_analyze(session: Session, plan: _Plan, inn: str, buttons: list[str] | 
     plan.contractor = {"inn": pack["inn"], "short_name": pack["short_name"]}
     plan.title = pack["short_name"]
     plan.notice = _sets_notice(sets, window)
+    plan.applied_sets = tuple(name for name in sets.data if name not in window.dropped_sets)
     plan.llm_messages = window.messages
     plan.schema = prompts.REPORT_SCHEMA
     plan.expected_completion = get_settings().tokens_expected_completion
@@ -444,7 +461,7 @@ def _plan_compare(session: Session, plan: _Plan, inns: tuple[str, ...]) -> None:
     plan.expected_completion = get_settings().tokens_expected_completion
 
 
-def _plan_clarify(session: Session, plan: _Plan, last: Any) -> None:
+def _plan_clarify(session: Session, plan: _Plan, last: Any, buttons: list[str] | None) -> None:
     pack = last.report or {}
     # Снимок вместо ORM-объекта: во второй фазе сессии, из которой он пришёл, уже нет.
     plan.last = {
@@ -458,7 +475,13 @@ def _plan_clarify(session: Session, plan: _Plan, last: Any) -> None:
     _configure_tools(session, plan, (last.inn,))
     block = prompts.clarify_block(plan.message, with_tools=plan.tool_rounds > 0)
     # Кнопки здесь игнорируются: набор висит на свежем разборе, а уточнение
-    # его не делает — дочитывать данные не к чему приложить.
+    # его не делает — дочитывать данные не к чему приложить. Молчать об этом
+    # нельзя: клиент отмечал набор и не понимал, почему ничего не изменилось.
+    if buttons:
+        plan.notice = (
+            "Отмеченные темы разбираются вместе с новой проверкой по ИНН. "
+            "Назовите ИНН, и я подниму их."
+        )
     window = context.build(
         session,
         plan.session_id,
@@ -521,7 +544,7 @@ def _compact_tool_results(
         {
             "found": False,
             "reason": "tool_result_too_large",
-            "hint": "Ответ инструмента не поместился в контекст. Уточните запрос.",
+            "hint": "Данных оказалось слишком много для одного ответа. Уточните запрос.",
         },
         ensure_ascii=False,
     )
@@ -560,6 +583,7 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
             "report": last.get("report"),
             "contractor": plan.contractor,
             "degraded": False,
+            "notice": plan.notice,
             **_badge(last.get("report")),
             REPLY_TOKENS: _completion(result.usage, answer),
         }
@@ -573,6 +597,7 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
             "analysis": _text(result.data, prompts.ANALYSIS) or baseline,
             "per_contractor": _per_contractor(result.data, plan.packs),
             "comparison": plan.comparison,
+            "next_steps": nextsteps.for_compare(plan.packs),
             "degraded": False,
             "notice": _partial_notice(
                 result, _text(result.data, prompts.ANSWER), _text(result.data, prompts.ANALYSIS)
@@ -594,6 +619,7 @@ def _outcome(plan: _Plan, result: llm.Result) -> dict[str, Any]:
         "key_risks": _strings(result.data, prompts.KEY_RISKS) or _fallback_risks(plan.packs),
         "positives": _strings(result.data, prompts.POSITIVES),
         "followups": plan.followups,
+        "next_steps": nextsteps.for_report(plan.pack, plan.verdict),
         **_badge(plan.pack),
         "degraded": False,
         "notice": _join(
@@ -644,6 +670,7 @@ def _degraded(plan: _Plan, detail: str, prefix: str = "") -> dict[str, Any]:
     if plan.scenario == agent_router.COMPARE:
         return {"answer": answer, "degraded": True, "notice": notice,
                 "per_contractor": _per_contractor({}, plan.packs), "comparison": plan.comparison,
+                "next_steps": nextsteps.for_compare(plan.packs),
                 REPLY_TOKENS: tokens.estimate(answer)}
     if plan.scenario == agent_router.CLARIFY:
         last = plan.last or {}
@@ -676,6 +703,7 @@ def _degraded(plan: _Plan, detail: str, prefix: str = "") -> dict[str, Any]:
         "key_risks": _fallback_risks(plan.packs),
         "positives": [],
         "followups": plan.followups,
+        "next_steps": nextsteps.for_report(plan.pack, plan.verdict) if plan.pack else [],
         **_badge(plan.pack),
         REPLY_TOKENS: tokens.estimate(answer),
     }
@@ -726,6 +754,11 @@ def _persist(plan: _Plan, outcome: dict[str, Any]) -> dict[str, Any]:
                 "positives": outcome.get("positives") or [],
                 "per_contractor": outcome.get("per_contractor") or [],
                 "followups": outcome.get("followups") or [],
+                # Подсказки следующего шага собраны кодом и стоят ноль токенов;
+                # в историю кладутся вместе с остальными блоками, чтобы после
+                # перезагрузки сообщение выглядело так же (§4).
+                "next_steps": outcome.get("next_steps") or [],
+                "datasets": [prefetch.LABELS.get(name, name) for name in plan.applied_sets],
                 "comparison": outcome.get("comparison"),
                 # Факт-пакет нужен фронту для графиков: ряды берутся из него,
                 # отдельных запросов и токенов это не стоит (§10).
@@ -779,13 +812,13 @@ def _sets_notice(sets: prefetch.Prefetched, window: context.Window) -> str | Non
     budget = None
     if window.dropped_sets:
         labels = ", ".join(prefetch.LABELS.get(name, name) for name in window.dropped_sets)
-        budget = f"Не поместились в контекст хода: {labels} — отметьте их следующим сообщением по одному."
+        budget = f"Не успел дочитать: {labels} — отметьте их следующим сообщением по одному."
     focused = None
     if window.dropped_extra_blocks:
         labels = ", ".join(
             prefetch.LABELS.get(name, name) for name in window.dropped_extra_blocks
         )
-        focused = f"Не поместились углублённые разборы: {labels}."
+        focused = f"Не успел углубиться в разбор: {labels}."
     return _join(sets.notice, budget, focused)
 
 
@@ -796,9 +829,15 @@ def _join(*parts: str | None) -> str | None:
 
 def _text(data: dict[str, Any], key: str) -> str | None:
     """Хвостовые поля могли не прийти (Result.problems): ответ пользователю от этого
-    не отменяется, недостающее место занимает детерминированный текст."""
+    не отменяется, недостающее место занимает детерминированный текст.
+
+    Здесь же выравнивается написание «ЗСК»: то же, что делает StreamCleaner
+    на дельтах, иначе история разошлась бы с показанным.
+    """
     value = data.get(key)
-    return value.strip() if isinstance(value, str) and value.strip() else None
+    if not (isinstance(value, str) and value.strip()):
+        return None
+    return sanitize.zsk(value.strip())
 
 
 def _strings(data: dict[str, Any], key: str) -> list[str]:

@@ -109,6 +109,8 @@ class ChatResponse(BaseModel):
     key_risks: list[str] = Field(default_factory=list)
     positives: list[str] = Field(default_factory=list)
     followups: list[dict] = Field(default_factory=list)
+    # Подсказки следующего шага: собраны кодом по факт-пакету, токенов не стоят.
+    next_steps: list[dict] = Field(default_factory=list)
     # Сравнение: списки по каждому контрагенту, а не общей кучей (§9).
     per_contractor: list[dict] = Field(default_factory=list)
     comparison: dict | None = None
@@ -118,6 +120,32 @@ class ChatResponse(BaseModel):
     messages: list[MessageResponse]
     degraded: bool = False
     notice: str | None = None
+
+
+class AlternativesRequest(BaseModel):
+    """Подбор альтернативы (client_path_ideas.md §7).
+
+    `same_region` снимается по кнопке клиента, когда в своём регионе не нашлось.
+    """
+
+    inn: str
+    same_region: bool = True
+
+
+class AlternativeItem(BaseModel):
+    inn: str
+    short_name: str
+    region: str | None = None
+    main_okved: str | None = None
+
+
+class AlternativesResponse(BaseModel):
+    # Сколько нашлось всего, не отдаём никогда: это раскрыло бы объём базы.
+    items: list[AlternativeItem]
+    same_region: bool
+    region: str | None = None
+    can_widen: bool = False
+    okved: str | None = None
 
 
 class CompareRequest(BaseModel):
