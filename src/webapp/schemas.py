@@ -104,6 +104,16 @@ class ChatResponse(BaseModel):
     analysis: str | None = None
     report: dict | None = None
     contractor: dict | None = None
+    # Структурные блоки сообщения: риски, сильные стороны, что запросить и сводка
+    # сравнения. Без них ответ читается сплошным абзацем (known_issues.md §1, §4).
+    key_risks: list[str] = Field(default_factory=list)
+    positives: list[str] = Field(default_factory=list)
+    followups: list[dict] = Field(default_factory=list)
+    # Сравнение: списки по каждому контрагенту, а не общей кучей (§9).
+    per_contractor: list[dict] = Field(default_factory=list)
+    comparison: dict | None = None
+    risk_level: str | None = None
+    zsk_risk_level: str | None = None
     session: SessionResponse
     messages: list[MessageResponse]
     degraded: bool = False

@@ -545,7 +545,10 @@ h3,
   display: grid;
   grid-template-rows: 68px 1fr;
   flex: 1;
-  min-height: 680px;
+  /* Панель делит высоту с заголовком и карточками сервисов. Фиксированные 680px
+     не помещались на низком экране и выталкивали страницу в прокрутку: чат
+     приходилось искать ниже сгиба. clamp даёт ужиматься, а flex — расти. */
+  min-height: clamp(420px, 60vh, 680px);
   overflow: hidden;
   border: 1px solid var(--ab-line);
   border-radius: 10px;
@@ -815,12 +818,14 @@ h3,
 
 .ai-welcome {
   display: flex;
+  /* flex, а не min-height: 100% — процент считается от content-box .ai-messages
+     и складывается с её паддингами, давая 56px прокрутки в пустом чате. */
+  flex: 1;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
   width: min(100%, 480px);
-  min-height: 100%;
-  margin: auto;
+  margin-inline: auto;
 }
 
 .ai-welcome > span {
@@ -1405,3 +1410,255 @@ h3,
     transform: none;
   }
 }
+
+/* --- Структурные блоки сообщения: вердикт, риски, сильные стороны, сводка ---
+   Ответ модели больше не сплошной абзац: главное видно без раскрытия досье. */
+
+.msg-verdict {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.msg-verdict small {
+  color: var(--ab-muted);
+  font-size: 11px;
+}
+
+.msg-block {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border-left: 2px solid transparent;
+  background: var(--ab-surface-tint);
+}
+
+.msg-block h4 {
+  margin: 0 0 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ab-muted);
+}
+
+.msg-block ul {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.msg-block li {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.msg-block li small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ab-muted);
+  font-size: 11px;
+}
+
+.msg-block-danger { border-left-color: var(--ab-danger-ink); background: var(--ab-danger-bg); }
+.msg-block-good { border-left-color: var(--ab-green-ink); background: var(--ab-green-bg); }
+.msg-block-neutral { border-left-color: var(--ab-neutral-ink); background: var(--ab-neutral-bg); }
+
+/* Таблица сравнения. Широкая по природе, поэтому прокручивается внутри себя:
+   горизонтальную прокрутку страницы это не создаёт. */
+.msg-compare {
+  margin-top: 12px;
+}
+
+.msg-compare-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--ab-line);
+  border-radius: 9px;
+}
+
+.msg-compare table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.msg-compare th,
+.msg-compare td {
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--ab-line);
+}
+
+.msg-compare thead th {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ab-muted);
+  background: var(--ab-surface-tint);
+}
+
+.msg-compare tbody tr:last-child th,
+.msg-compare tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.msg-compare tbody th {
+  font-weight: 600;
+  white-space: normal;
+  min-width: 160px;
+}
+
+.msg-compare tbody th small {
+  display: block;
+  font-weight: 400;
+  color: var(--ab-muted);
+  font-size: 11px;
+}
+
+.msg-diff {
+  margin: 10px 0 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.msg-missing {
+  margin: 8px 0 0;
+  color: var(--ab-muted);
+  font-size: 12px;
+}
+
+/* --- Графики. Ряды берутся из факт-пакета, который и так пришёл на фронт:
+   отдельных запросов и токенов это не стоит (known_issues.md §10). --- */
+
+.chart {
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid var(--ab-line);
+  border-radius: 9px;
+  background: var(--ab-surface);
+}
+
+.chart figcaption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ab-muted);
+}
+
+.chart figcaption span {
+  display: flex;
+  gap: 10px;
+}
+
+.chart-key::before {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 4px;
+  border-radius: 50%;
+}
+
+.chart-key-accent::before { background: var(--ab-red); }
+.chart-key-ink::before { background: var(--ab-navy); }
+.chart-key-muted::before { background: var(--ab-muted); }
+
+.chart svg {
+  display: block;
+  width: 100%;
+  height: 128px;
+}
+
+.chart-series polyline {
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-series circle { stroke: var(--ab-surface); stroke-width: 1.5; }
+.chart-series-accent polyline { stroke: var(--ab-red); }
+.chart-series-accent circle { fill: var(--ab-red); }
+.chart-series-ink polyline { stroke: var(--ab-navy); }
+.chart-series-ink circle { fill: var(--ab-navy); }
+.chart-series-muted polyline { stroke: var(--ab-muted); }
+.chart-series-muted circle { fill: var(--ab-muted); }
+
+.chart-zero {
+  stroke: var(--ab-line);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  color: var(--ab-muted);
+  font-size: 10px;
+}
+
+.chart-last {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 8px 0 0;
+}
+
+.chart-last div { display: flex; gap: 6px; align-items: baseline; }
+.chart-last dt { color: var(--ab-muted); font-size: 11px; }
+.chart-last dd { margin: 0; font-size: 13px; font-weight: 600; }
+
+.chart-more { margin-top: 12px; }
+
+.chart-more > summary {
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: var(--ab-control);
+  color: var(--ab-ink);
+  font-size: 12px;
+  font-weight: 600;
+  list-style: none;
+}
+
+.chart-more > summary::-webkit-details-marker { display: none; }
+.chart-more > summary:hover { background: var(--ab-neutral-bg); }
+
+/* Блоки по каждому контрагенту в сравнении: общие списки не давали увидеть,
+   у кого что (known_issues.md §9). */
+.msg-per-contractor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.msg-contractor {
+  padding: 10px 12px;
+  border: 1px solid var(--ab-line);
+  border-radius: 9px;
+}
+
+.msg-contractor > h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ab-ink);
+}
+
+.msg-contractor .msg-block { margin-top: 8px; }

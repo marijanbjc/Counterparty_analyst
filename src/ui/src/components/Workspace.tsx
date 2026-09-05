@@ -4,12 +4,17 @@ import { Spinner } from '@alfalab/core-components/spinner'
 import { Textarea } from '@alfalab/core-components/textarea'
 
 import { api, ApiError } from '../api'
-import { date, entityKind, money, number, riskName, riskTone } from '../format'
+import { MoreCharts, RevenueChart } from './Charts'
+import { compactMoney, date, entityKind, money, number, percent, riskName, riskTone, zskName } from '../format'
 import type {
   AuthState,
+  Comparison,
+  ComparisonRow,
+  ContractorBlocks,
   DataSet,
   FactPack,
   Message,
+  MessageBlocks,
   Profile,
   RolePreset,
   Session,
@@ -29,11 +34,10 @@ const DATASETS: Array<{ value: DataSet; label: string }> = [
   { value: 'security', label: 'Безопасность' },
   { value: 'activity', label: 'Деятельность' },
   { value: 'followups', label: 'Что запросить' },
-  { value: 'charts', label: 'Графики' },
 ]
 
 // Потолок наборов за ход — ExecutionProfile.max_buttons на бэкенде (§8.4).
-const MAX_DATASETS: Record<string, number> = { basic: 2, extended: 6 }
+const MAX_DATASETS: Record<string, number> = { basic: 1, extended: 6 }
 
 const STAGE_LABELS: Record<string, string> = {
   prefetch: 'Собираю данные',
@@ -230,6 +234,152 @@ function ContractorsPage({ aiPanel }: { aiPanel: ReactNode }) {
 
       {aiPanel}
     </div>
+  )
+}
+
+
+// Колонки сводки сравнения. Состав фиксирован, а порядок строк приходит с бэкенда
+// уже отсортированным по выбранному фокусу анализа (selection.COLUMN_ORDER).
+const COMPARE_COLUMNS: Array<{ key: string; label: string; render: (row: ComparisonRow) => string }> = [
+  { key: 'risk_level', label: 'Риск', render: (r) => riskName((r.risk_level as never) ?? null) },
+  { key: 'zsk_risk_level', label: 'ЗСК', render: (r) => zskName(r.zsk_risk_level as never) },
+  { key: 'revenue', label: 'Выручка', render: (r) => compactMoney(r.revenue as number | null) },
+  { key: 'net_assets', label: 'Чистые активы', render: (r) => compactMoney(r.net_assets as number | null) },
+  {
+    key: 'debt_to_net_assets',
+    label: 'Долг к активам',
+    render: (r) => percent(r.debt_to_net_assets as number | null),
+  },
+  { key: 'execproc_active', label: 'Взыскания', render: (r) => number(r.execproc_active as number | null) },
+  { key: 'negative_factors', label: 'Негативных', render: (r) => number(r.negative_factors as number | null) },
+]
+
+function ComparisonTable({ data }: { data: Comparison }) {
+  const rows = data.matrix ?? []
+  if (rows.length === 0) return null
+  const verdicts = new Map((data.verdicts ?? []).map((item) => [item.inn, item.verdict]))
+  return (
+    <div className="msg-compare">
+      <div className="msg-compare-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Контрагент</th>
+              <th scope="col">Вердикт</th>
+              {COMPARE_COLUMNS.map((column) => (
+                <th key={column.key} scope="col">{column.label}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={String(row.inn)}>
+                <th scope="row">
+                  {String(row.short_name ?? row.inn)}
+                  <small>ИНН {String(row.inn)}</small>
+                </th>
+                <td>{verdicts.get(String(row.inn)) ?? '—'}</td>
+                {COMPARE_COLUMNS.map((column) => (
+                  <td key={column.key}>{column.render(row)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {(data.differences ?? []).length > 0 && (
+        <ul className="msg-diff">
+          {data.differences!.map((item) => (
+            <li key={item.metric}>{item.text}</li>
+          ))}
+        </ul>
+      )}
+      {(data.not_found ?? []).length > 0 && (
+        <p className="msg-missing">Нет в базе: {data.not_found!.join(', ')}</p>
+      )}
+    </div>
+  )
+}
+
+function ContractorBlockList({ rows }: { rows: ContractorBlocks[] }) {
+  if (rows.length === 0) return null
+  return (
+    <div className="msg-per-contractor">
+      {rows.map((row) => (
+        <section key={row.inn} className="msg-contractor">
+          <h4>{row.short_name}</h4>
+          <BlockList title="Риски" tone="danger" items={row.key_risks} />
+          <BlockList title="В порядке" tone="good" items={row.positives} />
+        </section>
+      ))}
+    </div>
+  )
+}
+
+function BlockList({ title, tone, items }: { title: string; tone: string; items: string[] }) {
+  if (items.length === 0) return null
+  return (
+    <section className={`msg-block msg-block-${tone}`}>
+      <h4>{title}</h4>
+      <ul>
+        {items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+/** Сообщение ассистента: шапка с вердиктом, текст, затем структурные блоки.
+ *  Один путь отрисовки для свежего ответа и для истории — блоки приходят в meta. */
+function AssistantMessage({ content, blocks, degraded }: {
+  content: string
+  blocks: MessageBlocks
+  degraded?: boolean
+}) {
+  const risks = blocks.key_risks ?? []
+  const positives = blocks.positives ?? []
+  const followups = blocks.followups ?? []
+  const perContractor = blocks.per_contractor ?? []
+  return (
+    <>
+      {blocks.verdict && (
+        <header className="msg-verdict">
+          <span className={`reliability-badge reliability-${riskTone(blocks.risk_level ?? null)}`}>
+            {blocks.verdict}
+          </span>
+          <small>
+            {riskName(blocks.risk_level ?? null)} · ЗСК {zskName(blocks.zsk_risk_level)}
+          </small>
+        </header>
+      )}
+      <p>{content}</p>
+      {blocks.report && <RevenueChart pack={blocks.report} />}
+      {blocks.comparison && <ComparisonTable data={blocks.comparison} />}
+      {perContractor.length > 0 ? (
+        <ContractorBlockList rows={perContractor} />
+      ) : (
+        <>
+          <BlockList title="Риски" tone="danger" items={risks} />
+          <BlockList title="В порядке" tone="good" items={positives} />
+        </>
+      )}
+      {followups.length > 0 && (
+        <section className="msg-block msg-block-neutral">
+          <h4>Что запросить у контрагента</h4>
+          <ul>
+            {followups.map((item) => (
+              <li key={item.trigger}>
+                {item.question}
+                <small>{item.reason}</small>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {blocks.report && <MoreCharts pack={blocks.report} />}
+      {degraded && <small>Детерминированный отчёт · без языковой модели</small>}
+    </>
   )
 }
 
@@ -512,8 +662,15 @@ function AiPanel({
               {orderedMessages.map((item) => (
                 <article key={item.id} className={`ai-message ai-message-${item.role}`}>
                   <span>{item.role === 'user' ? 'Вы' : 'ИИ-проверка'}</span>
-                  <p>{item.content}</p>
-                  {item.meta?.degraded && <small>Детерминированный отчёт · без языковой модели</small>}
+                  {item.role === 'assistant' ? (
+                    <AssistantMessage
+                      content={item.content}
+                      blocks={item.meta ?? {}}
+                      degraded={item.meta?.degraded}
+                    />
+                  ) : (
+                    <p>{item.content}</p>
+                  )}
                 </article>
               ))}
               {draftUser && (

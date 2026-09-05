@@ -12,6 +12,8 @@ ANSWER = "answer"
 SUMMARY = "summary"
 ANALYSIS = "analysis"
 KEY_RISKS = "key_risks"
+POSITIVES = "positives"
+CONTRACTORS = "contractors"
 
 RULES = """Ты — ассистент банка по проверке контрагентов. Правила работы:
 1. Использовать только переданные данные. Нет в них — «таких данных в отчёте нет».
@@ -24,34 +26,74 @@ RULES = """Ты — ассистент банка по проверке конт
 8. Указывать дату актуальности as_of.
 9. Не давать указаний «работать» или «не работать»: подсвечивать риски и аккуратно рекомендовать. Решение принимает пользователь.
 10. Не раскрывать полноту базы: никаких «известно N из M» и долей заполненности.
-11. Имена полей источника допустимы в analysis, запрещены в answer.
+11. Имена полей источника допустимы только в analysis. В answer, key_risks и positives их быть не должно: это текст для человека. Так нельзя: «статус (severity = critical)», «шесть факторов (discrepancy)», «текущие (pending) дела».
 12. Писать «ЗСК», не «ZSK». Доли переводить в проценты: не «0,0109», а «1 %»."""
 
 # Порядок ключей — не оформление, а несущая конструкция: потоковый извлекатель
 # (stream_json.FirstFieldExtractor) читает значение ПЕРВОГО ключа. Если answer
 # перестанет быть первым, стриминг молча выключится, и ошибки при этом не будет.
 REPLY_KEYS = (ANSWER,)
-REPORT_KEYS = (ANSWER, SUMMARY, ANALYSIS, KEY_RISKS)
+REPORT_KEYS = (ANSWER, SUMMARY, ANALYSIS, KEY_RISKS, POSITIVES)
+# В сравнении общие списки бесполезны: пользователь пришёл увидеть разницу,
+# а получал вперемешку. Поэтому риски и плюсы — по каждому контрагенту (§9).
+COMPARE_KEYS = (ANSWER, SUMMARY, ANALYSIS, CONTRACTORS)
+LIST_KEYS = frozenset({KEY_RISKS, POSITIVES})
 
 _FORMAT = (
     "Ответь одним JSON-объектом с ключами {keys} — строго в этом порядке, "
     "без markdown-обёртки, без пояснений до и после объекта."
 )
 
+_POSITIVES_RULE = (
+    "Сюда идут только фактические показатели: выручка и её рост, прибыль, "
+    "отсутствие взысканий и споров, опыт госконтрактов, действующие лицензии. "
+    "НЕ сильная сторона: сами оценки риска и ЗСК, вердикт, а также то, что поле "
+    "просто заполнено. Так нельзя: «Формально низкий уровень риска и зелёный ЗСК», "
+    "«Авторизованный представитель указан — конкурсный управляющий». "
+    "Пустой список допустим: выдумывать положительное, если его нет, нельзя."
+)
+
 _REPLY_SHAPE = f'{ANSWER} — реплика в чат, 2–4 предложения, без имён полей источника'
+_COMPARE_SHAPE = (
+    f"{ANSWER} — реплика в чат, 3–6 предложений о том, чем контрагенты отличаются; "
+    f"{SUMMARY} — 1–2 строки; "
+    f"{ANALYSIS} — подробный разбор, здесь имена полей источника допустимы; "
+    f"{CONTRACTORS} — по объекту на КАЖДОГО контрагента из сводки: "
+    f"inn, {KEY_RISKS} и {POSITIVES} именно этого контрагента. "
+    "Общими списками не отвечай: смысл сравнения в том, чтобы видеть, у кого что. "
+    + _POSITIVES_RULE
+)
 _REPORT_SHAPE = (
     f"{ANSWER} — реплика в чат, 3–6 предложений, без имён полей источника; "
     f"{SUMMARY} — 1–2 строки, попадут в сводку сессии; "
     f"{ANALYSIS} — подробный разбор, здесь имена полей источника допустимы; "
-    f"{KEY_RISKS} — список строк, каждая строка — один риск."
+    f"{KEY_RISKS} — список строк, каждая строка — один риск, человеческим языком "
+    f"и без имён полей; "
+    f"{POSITIVES} — список строк, что в данных в порядке, тем же языком. "
+    + _POSITIVES_RULE
 )
 
 
+_STRING_LIST = {"type": "array", "items": {"type": "string"}}
+_PER_CONTRACTOR = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {"inn": {"type": "string"}, KEY_RISKS: _STRING_LIST, POSITIVES: _STRING_LIST},
+        "required": ["inn", KEY_RISKS, POSITIVES],
+        "additionalProperties": False,
+    },
+}
+
+
+def _property(key: str) -> dict[str, Any]:
+    if key == CONTRACTORS:
+        return _PER_CONTRACTOR
+    return _STRING_LIST if key in LIST_KEYS else {"type": "string"}
+
+
 def _schema(keys: tuple[str, ...]) -> dict[str, Any]:
-    properties: dict[str, Any] = {
-        key: {"type": "array", "items": {"type": "string"}} if key == KEY_RISKS else {"type": "string"}
-        for key in keys
-    }
+    properties: dict[str, Any] = {key: _property(key) for key in keys}
     return {
         "name": "contractor_reply",
         "schema": {
@@ -65,6 +107,7 @@ def _schema(keys: tuple[str, ...]) -> dict[str, Any]:
 
 REPLY_SCHEMA = _schema(REPLY_KEYS)
 REPORT_SCHEMA = _schema(REPORT_KEYS)
+COMPARE_SCHEMA = _schema(COMPARE_KEYS)
 
 
 TOOLS_RULES = """Доступны инструменты. Если для ответа не хватает цифр — вызови инструмент, не выдумывай.
@@ -98,7 +141,10 @@ FOCUSED_HEADER = (
 
 
 def system(keys: tuple[str, ...], role: str = "general", with_tools: bool = False) -> str:
-    shape = _REPORT_SHAPE if len(keys) > 1 else _REPLY_SHAPE
+    if CONTRACTORS in keys:
+        shape = _COMPARE_SHAPE
+    else:
+        shape = _REPORT_SHAPE if len(keys) > 1 else _REPLY_SHAPE
     parts = [RULES, ROLE_RULES.get(role, ROLE_RULES["general"])]
     if with_tools:
         parts.append(TOOLS_RULES)
@@ -133,11 +179,21 @@ def analyze_block(message: str, verdict: dict[str, Any], fact_pack: dict[str, An
     )
 
 
+# Ключ items содержит compact-пакеты по каждому контрагенту и весит втрое больше
+# всей остальной сводки. Коду он нужен — по нему считаются вердикты и обязательные
+# упоминания, — а модели нет: всё уже агрегировано в matrix (known_issues.md §3).
+COMPARE_SUMMARY_KEYS = ("matrix", "differences", "ranking", "not_comparable", "not_found")
+
+
+def compare_summary(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: payload[key] for key in COMPARE_SUMMARY_KEYS if key in payload}
+
+
 def compare_block(message: str, verdicts: list[dict[str, Any]], payload: dict[str, Any]) -> str:
     lines = [f"Вопрос пользователя: {message}", "Вердикты посчитаны кодом, пересматривать их нельзя:"]
     lines += [f"— ИНН {item['inn']}: {item['verdict']}." for item in verdicts]
     lines.append("Сводка сравнения, посчитанная кодом:")
-    lines.append(json.dumps(payload, ensure_ascii=False))
+    lines.append(json.dumps(compare_summary(payload), ensure_ascii=False))
     lines.append(
         "Сводного вывода «работайте с этим» не давай: инструмент показывает различия, "
         "выбор делает пользователь."

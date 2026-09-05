@@ -1,7 +1,7 @@
 export type RolePreset = 'finance' | 'legal' | 'security' | 'activity' | 'general'
 
 // Роль — свойство сессии, набор — разовое действие на один ход (§7.4).
-export type DataSet = 'finance' | 'legal' | 'security' | 'activity' | 'followups' | 'charts'
+export type DataSet = 'finance' | 'legal' | 'security' | 'activity' | 'followups'
 
 export type AuthState = {
   token: string
@@ -16,12 +16,46 @@ export type Session = {
   created_at: string
 }
 
+export type Followup = { question: string; reason: string; trigger: string }
+
+export type ComparisonRow = Record<string, string | number | boolean | null>
+
+export type Comparison = {
+  matrix?: ComparisonRow[]
+  differences?: { metric: string; text: string }[]
+  ranking?: { place: number; inn: string; short_name: string }[]
+  not_found?: string[]
+  verdicts?: { inn: string; verdict: string }[]
+}
+
+/** Блоки, которые рисуются одинаково и в свежем ответе, и в истории. */
+export type ContractorBlocks = {
+  inn: string
+  short_name: string
+  key_risks: string[]
+  positives: string[]
+}
+
+export type MessageBlocks = {
+  verdict?: string | null
+  risk_level?: RiskLevel
+  zsk_risk_level?: 'GREEN' | 'YELLOW' | 'RED' | null
+  key_risks?: string[]
+  positives?: string[]
+  followups?: Followup[]
+  comparison?: Comparison | null
+  per_contractor?: ContractorBlocks[]
+  report?: FactPack
+}
+
 export type Message = {
   id: number
   session_id: string
   role: 'user' | 'assistant' | 'system' | 'tool'
   content: string
-  meta: { inn?: string | null; scenario?: string; report?: FactPack; degraded?: boolean } | null
+  meta:
+    | ({ inn?: string | null; scenario?: string; report?: FactPack; degraded?: boolean } & MessageBlocks)
+    | null
   created_at: string
 }
 
@@ -59,12 +93,14 @@ export type FactPack = {
     balance?: Array<Record<string, number | null>>
   }
   arbitration: {
+    by_year?: { year: number; plaintiff_count: number | null; defendant_count: number | null }[]
     total_count: number | null
     total_amount: number | null
-    as_defendant?: { count?: number; amount?: number; pending?: number }
-    as_plaintiff?: { count?: number; amount?: number; pending?: number }
+    as_defendant?: { count?: number; amount?: number; pending_count?: number; pending_amount?: number }
+    as_plaintiff?: { count?: number; amount?: number; pending_count?: number; pending_amount?: number }
   }
   execution_proceedings: {
+    by_year?: Record<string, number>
     total: number
     active: number
     total_amount: number | null
@@ -83,6 +119,7 @@ export type FactPack = {
     positive?: Array<{ code: string | null; chapter: string | null; name?: string | null }>
     negative_total: number
   }
+  debt_burden?: { current_debt: number; net_assets: number | null; debt_to_net_assets: number | null } | null
   discrepancies: Array<{ code: string; text: string }>
   related_companies_count: number
   related_companies?: Array<{
@@ -105,6 +142,13 @@ export type ChatResponse = {
   contractor: { inn: string; short_name: string } | null
   degraded: boolean
   notice: string | null
+  key_risks: string[]
+  positives: string[]
+  followups: Followup[]
+  per_contractor: ContractorBlocks[]
+  comparison: Comparison | null
+  risk_level: RiskLevel
+  zsk_risk_level: 'GREEN' | 'YELLOW' | 'RED' | null
 }
 
 export type Profile = {
