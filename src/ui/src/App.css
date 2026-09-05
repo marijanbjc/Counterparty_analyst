@@ -1020,6 +1020,15 @@ h3,
   line-height: 1.3;
 }
 
+/* Что вообще делают эти кнопки — без пояснения клиент видел набор ярлыков. */
+.settings-note {
+  display: block;
+  margin: 0 6px 8px;
+  color: var(--ab-muted);
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 .ai-composer > small {
   display: block;
   margin-top: 6px;
@@ -1427,6 +1436,12 @@ h3,
   font-size: 11px;
 }
 
+/* Имя контрагента в шапке: ответ на уточнение иначе безадресен (§15.6). */
+.msg-subject {
+  color: var(--ab-ink);
+  font-weight: 600;
+}
+
 .msg-block {
   margin-top: 12px;
   padding: 10px 12px;
@@ -1455,6 +1470,15 @@ h3,
 .msg-block li {
   font-size: 13px;
   line-height: 1.5;
+}
+
+/* Пустой блок проговаривается словами: иначе «нет рисков» неотличимо от
+   «риски не подгрузились» (known_issues.md §15.5). */
+.msg-block-empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ab-muted);
 }
 
 .msg-block li small {
@@ -1579,15 +1603,18 @@ h3,
 .chart-key-ink::before { background: var(--ab-navy); }
 .chart-key-muted::before { background: var(--ab-muted); }
 
+/* Высота задаётся viewBox: подписи осей живут внутри svg, и растягивание
+   по одной оси искажало бы их (known_issues.md §10). */
 .chart svg {
   display: block;
   width: 100%;
-  height: 128px;
+  height: auto;
 }
 
 .chart-series polyline {
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
+  fill: none;
 }
 
 .chart-series circle { stroke: var(--ab-surface); stroke-width: 1.5; }
@@ -1598,30 +1625,42 @@ h3,
 .chart-series-muted polyline { stroke: var(--ab-muted); }
 .chart-series-muted circle { fill: var(--ab-muted); }
 
+.chart-bar-accent rect { fill: var(--ab-red); }
+.chart-bar-ink rect { fill: var(--ab-navy); }
+.chart-bar-muted rect { fill: var(--ab-muted); }
+
 .chart-zero {
+  stroke: var(--ab-ink);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-grid line {
   stroke: var(--ab-line);
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
 }
 
-.chart-axis {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  color: var(--ab-muted);
+/* Ось значений и подписи у точек — без них по графику нельзя прочитать
+   ни одного числа (known_issues.md §15). */
+.chart-axis-y text {
   font-size: 10px;
+  fill: var(--ab-muted);
 }
 
-.chart-last {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 8px 0 0;
+.chart-axis-accent text { fill: var(--ab-red); }
+.chart-axis-ink text { fill: var(--ab-navy); }
+
+.chart-value {
+  font-size: 10px;
+  font-weight: 600;
+  fill: var(--ab-ink);
 }
 
-.chart-last div { display: flex; gap: 6px; align-items: baseline; }
-.chart-last dt { color: var(--ab-muted); font-size: 11px; }
-.chart-last dd { margin: 0; font-size: 13px; font-weight: 600; }
+.chart-categories text {
+  font-size: 10px;
+  fill: var(--ab-muted);
+}
 
 .chart-more { margin-top: 12px; }
 

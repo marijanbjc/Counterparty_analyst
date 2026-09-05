@@ -37,6 +37,9 @@ export type ContractorBlocks = {
 }
 
 export type MessageBlocks = {
+  /** Кого касается ответ: имя и ИНН уходят в шапку сообщения. */
+  subject?: string | null
+  inn?: string | null
   verdict?: string | null
   risk_level?: RiskLevel
   zsk_risk_level?: 'GREEN' | 'YELLOW' | 'RED' | null

@@ -20,20 +20,22 @@ import type {
   Session,
 } from '../types'
 
+// Подписи описывают, что клиент увидит, а не как раздел называется внутри:
+// значения (value) — это пресеты бэкенда и меняться от подписей не должны.
 const ROLES: Array<{ value: RolePreset; label: string }> = [
-  { value: 'general', label: 'Общий' },
+  { value: 'general', label: 'Общий обзор' },
   { value: 'finance', label: 'Финансы' },
-  { value: 'legal', label: 'Юридический' },
-  { value: 'security', label: 'Безопасность' },
-  { value: 'activity', label: 'Деятельность' },
+  { value: 'legal', label: 'Суды и взыскания' },
+  { value: 'security', label: 'Статус и владельцы' },
+  { value: 'activity', label: 'Чем занимается' },
 ]
 
 const DATASETS: Array<{ value: DataSet; label: string }> = [
   { value: 'finance', label: 'Финансы' },
-  { value: 'legal', label: 'Юридический' },
-  { value: 'security', label: 'Безопасность' },
-  { value: 'activity', label: 'Деятельность' },
-  { value: 'followups', label: 'Что запросить' },
+  { value: 'legal', label: 'Суды и взыскания' },
+  { value: 'security', label: 'Статус и владельцы' },
+  { value: 'activity', label: 'Чем занимается' },
+  { value: 'followups', label: 'Что запросить у контрагента' },
 ]
 
 // Потолок наборов за ход — ExecutionProfile.max_buttons на бэкенде (§8.4).
@@ -55,6 +57,14 @@ const FOCUSED_STAGE_LABELS: Record<string, string> = {
   legal: 'Углубляю юридический разбор',
   security: 'Углубляю проверку безопасности',
   activity: 'Углубляю разбор деятельности',
+}
+
+/** Подсказка у отключённой темы. Слово «ход» клиенту ничего не говорит:
+ *  ограничение объясняем через то, что он видит — одно сообщение. */
+function cappedHint(max: number): string {
+  return max === 1
+    ? 'За одно сообщение разбираю одну тему. Снимите отметку, чтобы выбрать другую.'
+    : `За одно сообщение разбираю не больше ${max} тем. Снимите отметку, чтобы выбрать другую.`
 }
 
 function stageLabel(stage: string) {
@@ -187,6 +197,26 @@ function BusinessSidebar() {
   )
 }
 
+/** Нулевой лимит на бэкенде значит «без ограничения» (profiles.UNLIMITED):
+ *  шкалу в этом случае рисовать нечем, а счётчик израсходованного остаётся. */
+function Quota({ used, limit }: { used: number; limit: number }) {
+  if (limit === 0) {
+    return (
+      <div className="quota">
+        <div><span>Проверок сделано</span><b>{used}</b></div>
+      </div>
+    )
+  }
+  return (
+    <div className="quota">
+      <div><span>Проверки</span><b>{used} / {limit}</b></div>
+      <div className="quota-track">
+        <span style={{ width: `${Math.min(100, (used / limit) * 100)}%` }} />
+      </div>
+    </div>
+  )
+}
+
 function ProfileMenu({ profile, onLogout }: { profile: Profile | null; onLogout: () => void }) {
   return (
     <div className="profile-menu" id="profile-menu" role="dialog" aria-label="Личный кабинет">
@@ -197,12 +227,7 @@ function ProfileMenu({ profile, onLogout }: { profile: Profile | null; onLogout:
           <small>Тариф «{profile?.tariff_label || 'Бесплатный'}»</small>
         </div>
       </div>
-      <div className="quota">
-        <div><span>Запросы</span><b>{profile?.requests_used ?? 0} / {profile?.requests_limit ?? 100}</b></div>
-        <div className="quota-track">
-          <span style={{ width: `${Math.min(100, ((profile?.requests_used ?? 0) / (profile?.requests_limit || 100)) * 100)}%` }} />
-        </div>
-      </div>
+      <Quota used={profile?.requests_used ?? 0} limit={profile?.requests_limit ?? 0} />
       <div className="profile-stat"><span>Создано отчётов</span><b>{profile?.reports_generated ?? 0}</b></div>
       <p className="placeholder-note">Управление тарифом появится позже.</p>
       <Button view="secondary" size={40} block onClick={onLogout}>Выйти</Button>
@@ -308,25 +333,64 @@ function ContractorBlockList({ rows }: { rows: ContractorBlocks[] }) {
       {rows.map((row) => (
         <section key={row.inn} className="msg-contractor">
           <h4>{row.short_name}</h4>
-          <BlockList title="Риски" tone="danger" items={row.key_risks} />
-          <BlockList title="В порядке" tone="good" items={row.positives} />
+          <BlockList title="Риски" tone="danger" items={row.key_risks} empty={NO_RISKS} />
+          <BlockList title="В порядке" tone="good" items={row.positives} empty={NO_POSITIVES} />
         </section>
       ))}
     </div>
   )
 }
 
-function BlockList({ title, tone, items }: { title: string; tone: string; items: string[] }) {
-  if (items.length === 0) return null
+/* Пустой список и отсутствие блока выглядели одинаково: клиент не мог понять,
+   рисков нет или они не подгрузились (known_issues.md §15.5). Поэтому пустоту
+   проговариваем явно — но только там, где точно известно, что проверка прошла. */
+const NO_RISKS = 'По статусу, судам, взысканиям и реестрам ФНС отметок нет.'
+const NO_POSITIVES = 'Отдельных плюсов в отчёте не нашлось.'
+
+function BlockList({ title, tone, items, empty }: {
+  title: string
+  tone: string
+  items: string[]
+  empty?: string
+}) {
+  if (items.length === 0 && !empty) return null
   return (
     <section className={`msg-block msg-block-${tone}`}>
       <h4>{title}</h4>
-      <ul>
-        {items.map((item) => (
-          <li key={item}>{item}</li>
-        ))}
-      </ul>
+      {items.length === 0 ? (
+        <p className="msg-block-empty">{empty}</p>
+      ) : (
+        <ul>
+          {items.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
     </section>
+  )
+}
+
+/** Шапка сообщения. Вердикт без имени контрагента безадресен: в сессии их
+ *  несколько, а ответ на уточнение вообще не называет, о ком он (§15.6). */
+function MessageHeader({ blocks }: { blocks: MessageBlocks }) {
+  const compared = (blocks.per_contractor ?? []).map((row) => row.short_name)
+  const subject = blocks.subject || (compared.length > 0 ? compared.join(' · ') : null)
+  if (!subject && !blocks.verdict) return null
+  return (
+    <header className="msg-verdict">
+      {blocks.verdict && (
+        <span className={`reliability-badge reliability-${riskTone(blocks.risk_level ?? null)}`}>
+          {blocks.verdict}
+        </span>
+      )}
+      <small>
+        {subject && <b className="msg-subject">{subject}</b>}
+        {subject && blocks.inn ? ` · ИНН ${blocks.inn}` : ''}
+        {blocks.verdict
+          ? `${subject ? ' · ' : ''}${riskName(blocks.risk_level ?? null)} · ЗСК ${zskName(blocks.zsk_risk_level)}`
+          : ''}
+      </small>
+    </header>
   )
 }
 
@@ -343,16 +407,7 @@ function AssistantMessage({ content, blocks, degraded }: {
   const perContractor = blocks.per_contractor ?? []
   return (
     <>
-      {blocks.verdict && (
-        <header className="msg-verdict">
-          <span className={`reliability-badge reliability-${riskTone(blocks.risk_level ?? null)}`}>
-            {blocks.verdict}
-          </span>
-          <small>
-            {riskName(blocks.risk_level ?? null)} · ЗСК {zskName(blocks.zsk_risk_level)}
-          </small>
-        </header>
-      )}
+      <MessageHeader blocks={blocks} />
       <p>{content}</p>
       {blocks.report && <RevenueChart pack={blocks.report} />}
       {blocks.comparison && <ComparisonTable data={blocks.comparison} />}
@@ -360,8 +415,8 @@ function AssistantMessage({ content, blocks, degraded }: {
         <ContractorBlockList rows={perContractor} />
       ) : (
         <>
-          <BlockList title="Риски" tone="danger" items={risks} />
-          <BlockList title="В порядке" tone="good" items={positives} />
+          <BlockList title="Риски" tone="danger" items={risks} empty={NO_RISKS} />
+          <BlockList title="В порядке" tone="good" items={positives} empty={NO_POSITIVES} />
         </>
       )}
       {followups.length > 0 && (
@@ -713,7 +768,7 @@ function AiPanel({
                   {datasets.length > 0 && <span className="settings-count" aria-hidden="true">{datasets.length}</span>}
                   {settingsOpen && (
                     <div className="settings-popover" role="menu">
-                      <p>Фокус анализа</p>
+                      <p>На чём сосредоточиться</p>
                       {ROLES.map((item) => (
                         <Button
                           key={item.value}
@@ -730,7 +785,11 @@ function AiPanel({
                           {item.label}
                         </Button>
                       ))}
-                      <p className="settings-divider">Добавить к проверке</p>
+                      <p className="settings-divider">Разобрать подробнее</p>
+                      <small className="settings-note">
+                        Подниму по отмеченной теме дополнительные сведения и разберу
+                        их в ответе.
+                      </small>
                       <div className="settings-sets">
                         {DATASETS.map((item) => {
                           const checked = datasets.includes(item.value)
@@ -744,7 +803,7 @@ function AiPanel({
                               size={32}
                               block
                               disabled={capped}
-                              title={capped ? `За один ход дочитывается до ${maxDatasets} наборов` : undefined}
+                              title={capped ? cappedHint(maxDatasets) : undefined}
                               onClick={() => toggleDataset(item.value)}
                             >
                               {item.label}
@@ -754,8 +813,8 @@ function AiPanel({
                       </div>
                       <small className="settings-hint">
                         {datasets.length >= maxDatasets
-                          ? `Потолок тарифа: ${maxDatasets} за ход. Снимите отметку, чтобы выбрать другой набор.`
-                          : `Отмечено ${datasets.length} из ${maxDatasets}. Действует на одно сообщение.`}
+                          ? cappedHint(maxDatasets)
+                          : `Отмечено ${datasets.length} из ${maxDatasets}. Действует только на следующее сообщение.`}
                       </small>
                     </div>
                   )}
@@ -801,8 +860,8 @@ function AiPanel({
                 )}
               </div>
               <small>
-                Фокус анализа: {ROLES.find((item) => item.value === role)?.label}.
-                {profile?.profile === 'extended' ? ' Расширенный разбор с инструментами.' : ''}
+                Смотрю: {ROLES.find((item) => item.value === role)?.label.toLowerCase()}.
+                {profile?.profile === 'extended' ? ' Могу дозапрашивать данные по ходу разбора.' : ''}
               </small>
             </form>
           </section>
