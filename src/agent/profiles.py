@@ -30,15 +30,15 @@ class ExecutionProfile:
     max_compare: int
     context_budget_share: float
     requests_limit: int
+    tpm_limit: int
     label: str
 
     @property
     def budget_tokens(self) -> int:
-        # llm_tpm_limit — минутное окно ключа поставщика, бюджет хода — сколько
+        # tpm_limit — минутное окно ключа поставщика, бюджет хода — сколько
         # кладём в один запрос. Это разные величины; context_token_budget держит
         # потолок, выше которого доля не поднимается ни на каком тарифе (§8.4).
-        settings = get_settings()
-        return min(int(settings.llm_tpm_limit * self.context_budget_share), settings.context_token_budget)
+        return min(int(self.tpm_limit * self.context_budget_share), get_settings().context_token_budget)
 
 
 @lru_cache
@@ -55,6 +55,7 @@ def _profiles() -> dict[str, ExecutionProfile]:
             max_compare=settings.tariff_free_max_compare,
             context_budget_share=settings.context_budget_share,
             requests_limit=settings.tariff_free_requests_limit,
+            tpm_limit=settings.llm_tpm_limit_free,
             label="Бесплатный",
         ),
         "paid": ExecutionProfile(
@@ -67,6 +68,7 @@ def _profiles() -> dict[str, ExecutionProfile]:
             max_compare=settings.tariff_paid_max_compare,
             context_budget_share=settings.context_budget_share,
             requests_limit=settings.tariff_paid_requests_limit,
+            tpm_limit=settings.llm_tpm_limit_paid,
             label="Платный",
         ),
     }
